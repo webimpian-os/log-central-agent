@@ -1,0 +1,40 @@
+[Unit]
+Description=Ship PHP fatal errors from RunCloud sites to Log Central
+Documentation=https://github.com/webimpian-os/runcloud-log-central
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+User=runcloud-log-central
+Group=runcloud-log-central
+ExecStart=/opt/runcloud-log-central/bin/vector --threads 2 --config /opt/runcloud-log-central/config/pipeline.yaml --config /opt/runcloud-log-central/config/runtime.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StateDirectory=runcloud-log-central
+StateDirectoryMode=0755
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=50%
+# MemoryLimit for cgroup v1 (Ubuntu 20.04), MemoryMax for v2.
+MemoryLimit=256M
+MemoryMax=256M
+LimitNOFILE=65536
+LogRateLimitIntervalSec=60s
+LogRateLimitBurst=200
+
+[Install]
+WantedBy=multi-user.target
