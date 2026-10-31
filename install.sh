@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RLC_VERSION="${RLC_VERSION:-v1.0.0}"
-REPO="webimpian-os/runcloud-log-central"
+AGENT_VERSION="${AGENT_VERSION:-v1.0.0}"
+REPO="webimpian-os/log-central-agent"
 VECTOR_VERSION="0.61.0"
 
-PREFIX="/opt/runcloud-log-central"
-ETC_DIR="/etc/runcloud-log-central"
+PREFIX="/opt/log-central-agent"
+ETC_DIR="/etc/log-central-agent"
 SECRETS_DIR="$ETC_DIR/secrets"
-STATE_DIR="/var/lib/runcloud-log-central"
-SERVICE_USER="runcloud-log-central"
-SERVICE="runcloud-log-central.service"
-TIMER="runcloud-log-central-sites.timer"
+STATE_DIR="/var/lib/log-central-agent"
+SERVICE_USER="log-central-agent"
+SERVICE="log-central-agent.service"
+TIMER="log-central-agent-sites.timer"
 
 say() { printf '==> %s\n' "$*"; }
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -120,9 +120,9 @@ check_token
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/config/pipeline.yaml" ]; then
     src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
-    say "Downloading runcloud-log-central $RLC_VERSION"
+    say "Downloading log-central-agent $AGENT_VERSION"
     mkdir -p "$work/src"
-    curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/tags/$RLC_VERSION" | tar -xz -C "$work/src" --strip-components=1
+    curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/tags/$AGENT_VERSION" | tar -xz -C "$work/src" --strip-components=1
     src="$work/src"
 fi
 
@@ -146,9 +146,9 @@ id -u "$SERVICE_USER" >/dev/null 2>&1 \
 
 install -m 0644 "$src/config/pipeline.yaml" "$src/config/runtime.yaml" "$PREFIX/config/"
 install -m 0755 "$src/bin/refresh-sites" "$PREFIX/bin/refresh-sites"
-install -m 0644 "$src/systemd/runcloud-log-central.service" "$src/systemd/runcloud-log-central-sites.service" \
-    "$src/systemd/runcloud-log-central-sites.timer" /etc/systemd/system/
-echo "$RLC_VERSION" > "$PREFIX/VERSION"
+install -m 0644 "$src/systemd/log-central-agent.service" "$src/systemd/log-central-agent-sites.service" \
+    "$src/systemd/log-central-agent-sites.timer" /etc/systemd/system/
+echo "$AGENT_VERSION" > "$PREFIX/VERSION"
 
 install -d -m 0755 "$ETC_DIR"
 install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_USER" "$SECRETS_DIR"
@@ -201,5 +201,5 @@ if ! enforced_limits; then
     fail "the kernel is not enforcing the CPU/memory limits, so the agent was stopped"
 fi
 
-say "runcloud-log-central $RLC_VERSION is running for $(($(wc -l < "$STATE_DIR/sites.csv") - 1)) sites"
+say "log-central-agent $AGENT_VERSION is running for $(($(wc -l < "$STATE_DIR/sites.csv") - 1)) sites"
 echo "    Follow it with: journalctl -u $SERVICE -f"

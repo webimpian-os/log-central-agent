@@ -1,4 +1,4 @@
-# runcloud-log-central
+# log-central-agent
 
 Sends PHP fatal errors from every site on a RunCloud server to [Log Central](https://github.com/webimpian-os/log-central-portal), so a WordPress "critical error" page becomes an error you can see, instead of one nobody notices.
 
@@ -13,7 +13,7 @@ It runs once per server. Nothing is installed in WordPress, and the Log Central 
 On a RunCloud server using the NGINX + Apache stack, as root:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/webimpian-os/runcloud-log-central/v1.0.0/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/v1.0.0/install.sh | sudo bash
 ```
 
 It asks for the Log Central URL, app slug and app token, and checks them before changing anything.
@@ -27,7 +27,7 @@ Servers don't update automatically. A new release only reaches a server when you
 To update a server, run the installer from the new tag. Settings and the token are kept:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/webimpian-os/runcloud-log-central/<new-tag>/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/<new-tag>/install.sh | sudo bash
 ```
 
 To update many servers from a checkout of the new tag, one at a time:
@@ -73,9 +73,9 @@ For scale, the 6 real sites behind the numbers in the diagram logged about 2,000
 ## Commands
 
 ```
-systemctl status runcloud-log-central      # is it running?
-journalctl -u runcloud-log-central -f      # what is it doing?
-curl -fsSL https://raw.githubusercontent.com/webimpian-os/runcloud-log-central/v1.0.0/uninstall.sh | sudo bash
+systemctl status log-central-agent      # is it running?
+journalctl -u log-central-agent -f      # what is it doing?
+curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/v1.0.0/uninstall.sh | sudo bash
 ```
 
 ## Development
@@ -85,4 +85,4 @@ VECTOR=/path/to/vector scripts/test.sh     # run the tests
 scripts/rollout.sh --url URL --app SLUG web-01 web-02   # install this checkout over SSH (token from LOG_CENTRAL_TOKEN)
 ```
 
-To release: bump `RLC_VERSION` in `install.sh` and the tags in this README, commit, tag the commit with the same version (e.g. `v1.0.1`), and push the tag. Then update the servers as above.
+To release: bump `AGENT_VERSION` in `install.sh` and the tags in this README, commit, tag the commit with the same version (e.g. `v1.0.1`), and push the tag. Then update the servers as above.

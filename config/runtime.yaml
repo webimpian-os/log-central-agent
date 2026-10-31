@@ -1,16 +1,16 @@
-data_dir: /var/lib/runcloud-log-central
+data_dir: /var/lib/log-central-agent
 timezone: local
 
 secret:
   settings:
     type: directory
-    path: /etc/runcloud-log-central/secrets
+    path: /etc/log-central-agent/secrets
     remove_trailing_whitespace: true
 
 enrichment_tables:
   sites:
     type: file
     file:
-      path: /var/lib/runcloud-log-central/sites.csv
+      path: /var/lib/log-central-agent/sites.csv
       encoding:
         type: csv

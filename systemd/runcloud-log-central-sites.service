@@ -1,6 +1,0 @@
-[Unit]
-Description=Refresh the RunCloud site domains used by runcloud-log-central
-
-[Service]
-Type=oneshot
-ExecStart=/opt/runcloud-log-central/bin/refresh-sites --reload

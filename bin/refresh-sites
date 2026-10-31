@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-conf_dir="${RLC_APACHE_CONF_DIR:-/etc/apache2-rc/conf.d}"
-table="${RLC_SITES_TABLE:-/var/lib/runcloud-log-central/sites.csv}"
-service="runcloud-log-central.service"
+conf_dir="${AGENT_APACHE_CONF_DIR:-/etc/apache2-rc/conf.d}"
+table="${AGENT_SITES_TABLE:-/var/lib/log-central-agent/sites.csv}"
+service="log-central-agent.service"
 
 # ServerName is RunCloud's webapp name, not a domain.
 primary_domain() {

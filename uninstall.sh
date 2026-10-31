@@ -3,15 +3,15 @@ set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "error: run as root (sudo)" >&2; exit 1; }
 
-systemctl disable --now runcloud-log-central-sites.timer runcloud-log-central.service 2>/dev/null || true
-rm -f /etc/systemd/system/runcloud-log-central.service \
-    /etc/systemd/system/runcloud-log-central-sites.service \
-    /etc/systemd/system/runcloud-log-central-sites.timer
+systemctl disable --now log-central-agent-sites.timer log-central-agent.service 2>/dev/null || true
+rm -f /etc/systemd/system/log-central-agent.service \
+    /etc/systemd/system/log-central-agent-sites.service \
+    /etc/systemd/system/log-central-agent-sites.timer
 systemctl daemon-reload
 
-rm -rf /opt/runcloud-log-central /etc/runcloud-log-central /var/lib/runcloud-log-central
-if id -u runcloud-log-central >/dev/null 2>&1; then
-    userdel runcloud-log-central
+rm -rf /opt/log-central-agent /etc/log-central-agent /var/lib/log-central-agent
+if id -u log-central-agent >/dev/null 2>&1; then
+    userdel log-central-agent
 fi
 
-echo "==> runcloud-log-central removed"
+echo "==> log-central-agent removed"

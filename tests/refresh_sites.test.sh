@@ -12,7 +12,7 @@ noalias,
 wildcard,wild.test
 wwwonly,www.only.test"
 
-RLC_APACHE_CONF_DIR="$root/tests/fixtures/apache2-rc" RLC_SITES_TABLE="$table" "$root/bin/refresh-sites"
+AGENT_APACHE_CONF_DIR="$root/tests/fixtures/apache2-rc" AGENT_SITES_TABLE="$table" "$root/bin/refresh-sites"
 
 if [ "$(cat "$table")" != "$expected" ]; then
     echo "refresh-sites: unexpected table" >&2
@@ -22,7 +22,7 @@ fi
 
 before="$(stat -c %Y "$table" 2>/dev/null || stat -f %m "$table")"
 sleep 1
-RLC_APACHE_CONF_DIR="$root/tests/fixtures/apache2-rc" RLC_SITES_TABLE="$table" "$root/bin/refresh-sites"
+AGENT_APACHE_CONF_DIR="$root/tests/fixtures/apache2-rc" AGENT_SITES_TABLE="$table" "$root/bin/refresh-sites"
 after="$(stat -c %Y "$table" 2>/dev/null || stat -f %m "$table")"
 
 if [ "$before" != "$after" ]; then
