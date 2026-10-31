@@ -5,13 +5,15 @@ AGENT_VERSION="${AGENT_VERSION:-v1.0.0}"
 REPO="webimpian-os/log-central-agent"
 VECTOR_VERSION="0.61.0"
 
-PREFIX="/opt/log-central-agent"
-ETC_DIR="/etc/log-central-agent"
+NAME="log-central-agent"
+PREFIX="/opt/$NAME"
+ETC_DIR="/etc/$NAME"
 SECRETS_DIR="$ETC_DIR/secrets"
-STATE_DIR="/var/lib/log-central-agent"
-SERVICE_USER="log-central-agent"
-SERVICE="log-central-agent.service"
-TIMER="log-central-agent-sites.timer"
+STATE_DIR="/var/lib/$NAME"
+SERVICE_USER="$NAME"
+SERVICE="$NAME.service"
+TIMER="$NAME-sites.timer"
+DROPIN_DIR="/etc/systemd/system/$SERVICE.d"
 
 say() { printf '==> %s\n' "$*"; }
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -20,11 +22,13 @@ url=""
 app=""
 token=""
 token_stdin=0
+panel=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --url) [ $# -ge 2 ] || fail "--url needs a value"; url="$2"; shift 2 ;;
         --app) [ $# -ge 2 ] || fail "--app needs a value"; app="$2"; shift 2 ;;
+        --panel) [ $# -ge 2 ] || fail "--panel needs a value"; panel="$2"; shift 2 ;;
         --token-stdin) token_stdin=1; shift ;;
         *) fail "unknown option: $1" ;;
     esac
@@ -32,10 +36,57 @@ done
 
 [ "$(id -u)" -eq 0 ] || fail "run as root (sudo)"
 command -v systemctl >/dev/null || fail "systemd is required"
-[ -d /etc/apache2-rc/conf.d ] || fail "not a RunCloud server with the NGINX + Apache stack (/etc/apache2-rc/conf.d is missing)"
-for cmd in curl tar sha256sum install runuser useradd; do
+for cmd in curl tar sha256sum install runuser useradd journalctl; do
     command -v "$cmd" >/dev/null || fail "$cmd is required"
 done
+
+is_panel() {
+    case "$1" in
+        runcloud) [ -d /opt/RunCloud ] && [ -d /etc/nginx-rc ] ;;
+        plesk) [ -f /usr/local/psa/version ] && [ -d /var/www/vhosts/system ] ;;
+        *) return 1 ;;
+    esac
+}
+
+# Keep in sync with config/panels/*.yaml.
+site_logs() {
+    case "$1" in
+        runcloud)
+            compgen -G '/home/*/logs/apache2/*_error.log' || true
+            compgen -G '/home/*/logs/nginx/*_error.log' || true
+            ;;
+        plesk)
+            compgen -G '/var/www/vhosts/system/*/logs/error_log' || true
+            compgen -G '/var/www/vhosts/system/*/logs/proxy_error_log' || true
+            ;;
+    esac
+}
+
+installed_panel="$(cat "$ETC_DIR/panel" 2>/dev/null || true)"
+[ -n "$panel" ] || panel="$installed_panel"
+if [ -z "$panel" ]; then
+    for candidate in runcloud plesk; do
+        if is_panel "$candidate"; then
+            [ -z "$panel" ] || fail "this server looks like both RunCloud and Plesk, pass --panel. Nothing was changed"
+            panel="$candidate"
+        fi
+    done
+    [ -n "$panel" ] || fail "no supported panel found (RunCloud or Plesk). Nothing was changed"
+fi
+case "$panel" in
+    runcloud | plesk) ;;
+    *) fail "unknown panel: $panel (use runcloud or plesk)" ;;
+esac
+is_panel "$panel" || fail "this server doesn't look like a $panel server. Nothing was changed"
+[ -z "$installed_panel" ] || [ "$installed_panel" = "$panel" ] \
+    || fail "already installed for $installed_panel, run uninstall.sh first. Nothing was changed"
+
+case "$panel" in
+    runcloud) panel_name="RunCloud" ;;
+    plesk) panel_name="Plesk $(awk '{ print $1; exit }' /usr/local/psa/version)" ;;
+esac
+log_count="$(site_logs "$panel" | wc -l | tr -d ' ')"
+say "Detected $panel_name with $log_count site error logs"
 
 case "$(uname -m)" in
     x86_64) arch="x86_64"; vector_sha256="e1609b8a55ef1c1fc4fd88633e2bc6366e9a4022f6f1ae846cadd27af5237621" ;;
@@ -80,7 +131,7 @@ url="${url%/}"
 [[ "$token" =~ ^[A-Za-z0-9._-]+$ ]] || fail "missing or malformed app token"
 
 check_token() {
-    # No environment field: rejected after the token and app checks, so nothing is stored.
+    # No environment field: rejected after the token check, so nothing is stored.
     local probe response status body
     probe='[{"timestamp":"2000-01-01 00:00:00.000","fingerprint":"00000000000000000000000000000000","app":"'"$app"'"}]'
     response="$(printf 'Authorization: Bearer %s\n' "$token" \
@@ -120,7 +171,7 @@ check_token
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/config/pipeline.yaml" ]; then
     src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
-    say "Downloading log-central-agent $AGENT_VERSION"
+    say "Downloading $NAME $AGENT_VERSION"
     mkdir -p "$work/src"
     curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/tags/$AGENT_VERSION" | tar -xz -C "$work/src" --strip-components=1
     src="$work/src"
@@ -145,13 +196,20 @@ id -u "$SERVICE_USER" >/dev/null 2>&1 \
     || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
 
 install -m 0644 "$src/config/pipeline.yaml" "$src/config/runtime.yaml" "$PREFIX/config/"
-install -m 0644 "$src/config/panels/runcloud.yaml" "$PREFIX/config/panel.yaml"
+install -m 0644 "$src/config/panels/$panel.yaml" "$PREFIX/config/panel.yaml"
 install -m 0755 "$src/bin/refresh-sites" "$PREFIX/bin/refresh-sites"
-install -m 0644 "$src/systemd/log-central-agent.service" "$src/systemd/log-central-agent-sites.service" \
-    "$src/systemd/log-central-agent-sites.timer" /etc/systemd/system/
+install -m 0644 "$src/systemd/$NAME.service" "$src/systemd/$NAME-sites.service" "$src/systemd/$NAME-sites.timer" \
+    /etc/systemd/system/
+if [ -f "$src/systemd/$panel.conf" ]; then
+    install -d -m 0755 "$DROPIN_DIR"
+    install -m 0644 "$src/systemd/$panel.conf" "$DROPIN_DIR/panel.conf"
+else
+    rm -f "$DROPIN_DIR/panel.conf"
+fi
 echo "$AGENT_VERSION" > "$PREFIX/VERSION"
 
 install -d -m 0755 "$ETC_DIR"
+echo "$panel" > "$ETC_DIR/panel"
 install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_USER" "$SECRETS_DIR"
 write_secret() {
     local tmp
@@ -172,9 +230,19 @@ runuser -u "$SERVICE_USER" -- "$PREFIX/bin/vector" validate --no-environment --r
     "$PREFIX/config/pipeline.yaml" "$PREFIX/config/panel.yaml" "$PREFIX/config/runtime.yaml" >/dev/null \
     || fail "Vector rejected the configuration"
 
+units=("$SERVICE")
+if [ "$panel" = "runcloud" ]; then
+    units+=("$TIMER")
+fi
+
 systemctl daemon-reload
-systemctl enable --quiet "$SERVICE" "$TIMER"
-systemctl restart "$SERVICE" "$TIMER"
+systemctl enable --quiet "${units[@]}"
+systemctl restart "${units[@]}"
+
+stop_and_fail() {
+    systemctl disable --now --quiet "${units[@]}" || true
+    fail "$1"
+}
 
 sleep 3
 if ! systemctl is-active --quiet "$SERVICE"; then
@@ -197,10 +265,26 @@ enforced_limits() {
     [ "$memory" = "268435456" ] && [ "$cpu" = "50000" ] && [ "$nice" = "19" ]
 }
 
-if ! enforced_limits; then
-    systemctl disable --now --quiet "$SERVICE" "$TIMER" || true
-    fail "the kernel is not enforcing the CPU/memory limits, so the agent was stopped"
-fi
+enforced_limits || stop_and_fail "the kernel is not enforcing the CPU/memory limits, so the agent was stopped"
 
-say "log-central-agent $AGENT_VERSION is running for $(($(wc -l < "$STATE_DIR/sites.csv") - 1)) sites"
+# Vector silently skips folders it can't read.
+sees_logs() {
+    local invocation output
+    invocation="$(systemctl show -p InvocationID --value "$SERVICE")"
+    for _ in $(seq 1 15); do
+        output="$(journalctl --no-pager -o cat "_SYSTEMD_INVOCATION_ID=$invocation" 2>/dev/null || true)"
+        if grep -qE "Found new file to watch|Resuming to watch file" <<<"$output"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+if [ "$log_count" -gt 0 ]; then
+    sees_logs || stop_and_fail "the agent can't see the site logs, so it was stopped"
+    say "$NAME $AGENT_VERSION is running on $panel_name, following $log_count site error logs"
+else
+    say "$NAME $AGENT_VERSION is running on $panel_name. No site has logged anything yet"
+fi
 echo "    Follow it with: journalctl -u $SERVICE -f"

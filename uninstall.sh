@@ -4,7 +4,8 @@ set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "error: run as root (sudo)" >&2; exit 1; }
 
 systemctl disable --now log-central-agent-sites.timer log-central-agent.service 2>/dev/null || true
-rm -f /etc/systemd/system/log-central-agent.service \
+rm -rf /etc/systemd/system/log-central-agent.service \
+    /etc/systemd/system/log-central-agent.service.d \
     /etc/systemd/system/log-central-agent-sites.service \
     /etc/systemd/system/log-central-agent-sites.timer
 systemctl daemon-reload

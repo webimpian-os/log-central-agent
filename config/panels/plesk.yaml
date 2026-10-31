@@ -1,0 +1,24 @@
+# Plesk gzips rotated logs at once, so only live files can be read.
+sources:
+  apache_error_logs:
+    type: file
+    include:
+      - /var/www/vhosts/system/*/logs/error_log
+    read_from: beginning
+    ignore_older_secs: 86400
+    rotate_wait_secs: 300
+    max_line_bytes: 262144
+
+  nginx_error_logs:
+    type: file
+    include:
+      - /var/www/vhosts/system/*/logs/proxy_error_log
+    read_from: beginning
+    ignore_older_secs: 86400
+    rotate_wait_secs: 300
+    max_line_bytes: 262144
+    multiline:
+      start_pattern: '^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \['
+      condition_pattern: '^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \['
+      mode: halt_before
+      timeout_ms: 1000

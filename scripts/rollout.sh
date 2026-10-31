@@ -7,7 +7,7 @@ hosts=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --url | --app)
+        --url | --app | --panel)
             [ $# -ge 2 ] || { echo "error: $1 needs a value" >&2; exit 1; }
             options+=("$1" "$2")
             shift 2
@@ -17,7 +17,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-[ ${#hosts[@]} -gt 0 ] || { echo "usage: scripts/rollout.sh [--url URL] [--app SLUG] host..." >&2; exit 1; }
+[ ${#hosts[@]} -gt 0 ] || { echo "usage: scripts/rollout.sh [--url URL] [--app SLUG] [--panel PANEL] host..." >&2; exit 1; }
 
 if [ -n "${LOG_CENTRAL_TOKEN:-}" ]; then
     options+=(--token-stdin)
