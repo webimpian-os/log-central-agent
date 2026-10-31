@@ -1,24 +1,31 @@
 # log-central-agent
 
-Sends PHP fatal errors from every site on a RunCloud server to [Log Central](https://github.com/webimpian-os/log-central-portal), so a WordPress "critical error" page becomes an error you can see, instead of one nobody notices.
+Watches every site on a RunCloud or Plesk server and reports problems to [Log Central](https://github.com/webimpian-os/log-central-portal):
+
+- **PHP errors:** a WordPress "critical error" page becomes an error you can see, instead of one nobody notices.
+- **Failing sites:** at least half of a site's requests in a minute, and at least 5, getting a server error (5xx), like a broken page or a database that's down.
+- **Traffic spikes:** a site getting 3,000 or more requests in a minute, with the top addresses, paths and user agents, so you can tell an attack from a busy day.
 
 It runs once per server. Nothing is installed in WordPress, and the Log Central token never touches a site's files or database.
 
 ## How it works
 
-![WordPress sites write PHP fatal errors to Apache's error logs; the agent keeps only real errors, labels them with the site and sends each one to Log Central at most once per 5 minutes](docs/how-it-works.svg)
+![The agent reads each site's Apache and nginx logs, keeps real PHP errors, failing sites and traffic spikes, labels them with the site and sends them to Log Central](docs/how-it-works.svg)
 
 ## Install
 
-On a RunCloud server using the NGINX + Apache stack, as root:
+As root on a RunCloud or Plesk server:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/v1.0.0/install.sh | sudo bash
 ```
 
-It asks for the Log Central URL, app slug and app token, and checks them before changing anything.
+It finds the panel itself, asks for the Log Central URL, app slug and app token, and checks them before changing anything. On a server that is neither, or looks like both, it stops without changing anything.
 
-Native NGINX sites (without Apache) aren't supported yet.
+| Panel | Reads |
+|---|---|
+| RunCloud (NGINX + Apache or native NGINX) | `/home/*/logs/apache2/*_error.log`, `/home/*/logs/nginx/*_error.log`, `/home/*/logs/nginx/*_access.log` |
+| Plesk (nginx in front of Apache) | `/var/www/vhosts/system/*/logs/` `error_log`, `proxy_error_log`, `proxy_access_log`, `proxy_access_ssl_log` |
 
 ## Update
 
@@ -42,16 +49,19 @@ Update a staging server first, then one client server, then the rest.
 
 | Risk | Protection |
 |---|---|
-| High CPU | Capped at half of one core, at the lowest priority, so PHP and MySQL always come first |
-| Out of memory | Capped at 256 MB. If it goes over, only the agent is restarted, never the sites |
-| Disk full | Writes only a few KB. Pending errors stay in memory, and its own logging is rate-limited |
-| Log Central down | Retries in the background, then drops errors. It never blocks |
-| Crash loop | Stops after 5 crashes in 10 minutes |
+| High CPU | Capped at half of one core, at the lowest priority, so PHP and MySQL always come first. Under load it falls behind and catches up later |
+| Out of memory | Capped at 256 MB, with fixed limits on what it remembers during a flood. If it goes over, only the agent is restarted, never the sites |
+| Disk full | Writes only a few KB. Its own logging is rate-limited |
+| Log Central down | Stops reading and waits. Unsent errors stay in the log files and are sent once Log Central is back |
+| Agent restart or crash | Picks up where Log Central last confirmed, so nothing is lost. A backlog is never counted as a traffic spike |
+| Crash loop | Stops after 5 crashes in 10 minutes, then tries again every 15 minutes |
 | Busy server | The installer refuses to run on low disk, low memory or high load, and stops the agent if the kernel isn't enforcing the limits above |
 
 ## Stress test
 
-Vector 0.61.0 under the same limits as production (half a CPU core, 256 MB), with 100 sites:
+Vector 0.61.0 under the same limits as production (half a CPU core, 256 MB).
+
+PHP errors, 100 sites:
 
 | Scenario | Load | Avg CPU | Peak memory | Result |
 |---|---|---|---|---|
@@ -61,14 +71,26 @@ Vector 0.61.0 under the same limits as production (half a CPU core, 256 MB), wit
 | Log Central unreachable | 5,000 lines a second for 1 minute | 16% | 73 MB | Retried, kept running |
 | Log Central back | 200 lines a second | 2% | 61 MB | Errors flowed again |
 
-In total it read 2.2 million lines (1.2 GB) with a memory peak of 75 MB, no out-of-memory kills and no crashes, and wrote only 55 lines to its own log. Log Central never received more than 100 errors in one request.
+In total it read 2.2 million lines (1.2 GB) with a memory peak of 75 MB, no out-of-memory kills and no crashes.
 
-For scale, the 6 real sites behind the numbers in the diagram logged about 2,000 fatal errors in their current log files. The flood test wrote 5,000 lines every second.
+Traffic, on a Plesk layout with 50 sites, 1% of requests ending in a PHP fatal error:
+
+| Scenario | Load | Avg CPU | Peak memory | Result |
+|---|---|---|---|---|
+| Normal traffic | 1,000 requests a second for 2 minutes | 17% | 50 MB | Kept up live |
+| DDoS on one site | 8,000 requests a second from random addresses, paths and user agents, for 2 minutes | 47% | 76 MB | Reported the spike, caught up 26 s after the attack stopped |
+| Server-wide flood, 100 sites | 20,000 requests a second for 1 minute | 49% (the cap) | 92 MB | Reported the spike on all 100 sites. Fell behind and caught up 2 minutes after the flood stopped |
+| Log Central down for 6 minutes | 2,000 requests a second | 6% | 73 MB | Paused reading, then sent the 175 errors that were waiting. No false spikes from the backlog |
+
+In total it read 2.4 million requests (277 MB of logs) with a memory peak of 92 MB, no out-of-memory kills and no crashes.
+
+For scale, the busiest real site on our two test servers peaked at 666 requests a minute, about 11 a second.
 
 ## Security
 
 - The URL, app slug and token are readable only by the agent's own system user and root. Sites and their PHP code can't read them.
 - The token can only send errors to one app. If it leaks, rotate it in Log Central and run the installer again.
+- Plesk keeps each domain's logs readable only by root, so on Plesk the agent may read any file, but sees only `/var/www/vhosts/system`. Site files, Plesk's own secrets and `/etc/shadow` are hidden from it.
 
 ## Commands
 
