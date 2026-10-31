@@ -13,6 +13,7 @@ STATE_DIR="/var/lib/$NAME"
 SERVICE_USER="$NAME"
 SERVICE="$NAME.service"
 TIMER="$NAME-sites.timer"
+RESTART_TIMER="$NAME-restart.timer"
 DROPIN_DIR="/etc/systemd/system/$SERVICE.d"
 
 say() { printf '==> %s\n' "$*"; }
@@ -199,6 +200,7 @@ install -m 0644 "$src/config/pipeline.yaml" "$src/config/runtime.yaml" "$PREFIX/
 install -m 0644 "$src/config/panels/$panel.yaml" "$PREFIX/config/panel.yaml"
 install -m 0755 "$src/bin/refresh-sites" "$PREFIX/bin/refresh-sites"
 install -m 0644 "$src/systemd/$NAME.service" "$src/systemd/$NAME-sites.service" "$src/systemd/$NAME-sites.timer" \
+    "$src/systemd/$NAME-restart.service" "$src/systemd/$NAME-restart.timer" \
     /etc/systemd/system/
 if [ -f "$src/systemd/$panel.conf" ]; then
     install -d -m 0755 "$DROPIN_DIR"
@@ -230,7 +232,7 @@ runuser -u "$SERVICE_USER" -- "$PREFIX/bin/vector" validate --no-environment --r
     "$PREFIX/config/pipeline.yaml" "$PREFIX/config/panel.yaml" "$PREFIX/config/runtime.yaml" >/dev/null \
     || fail "Vector rejected the configuration"
 
-units=("$SERVICE")
+units=("$SERVICE" "$RESTART_TIMER")
 if [ "$panel" = "runcloud" ]; then
     units+=("$TIMER")
 fi

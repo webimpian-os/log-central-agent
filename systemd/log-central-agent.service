@@ -9,7 +9,7 @@ StartLimitBurst=5
 [Service]
 User=log-central-agent
 Group=log-central-agent
-ExecStart=/opt/log-central-agent/bin/vector --threads 2 --config /opt/log-central-agent/config/pipeline.yaml --config /opt/log-central-agent/config/panel.yaml --config /opt/log-central-agent/config/runtime.yaml
+ExecStart=/opt/log-central-agent/bin/vector --threads 2 --graceful-shutdown-limit-secs 10 --config /opt/log-central-agent/config/pipeline.yaml --config /opt/log-central-agent/config/panel.yaml --config /opt/log-central-agent/config/runtime.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10

@@ -178,9 +178,12 @@ sinks:
     batch:
       max_events: 100
       timeout_secs: 5
+    # Unsent errors stay in the log files and are read again once Log Central is back.
+    acknowledgements:
+      enabled: true
     buffer:
       type: memory
       max_events: 1000
-      when_full: drop_newest
+      when_full: block
     healthcheck:
       enabled: false

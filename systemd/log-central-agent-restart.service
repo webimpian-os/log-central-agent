@@ -1,0 +1,6 @@
+[Unit]
+Description=Start log-central-agent again if it gave up after repeated crashes
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'if systemctl is-failed --quiet log-central-agent.service; then systemctl reset-failed log-central-agent.service && systemctl start log-central-agent.service; fi'
