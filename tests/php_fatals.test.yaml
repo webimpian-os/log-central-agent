@@ -388,3 +388,52 @@ tests:
           - type: vrl
             source: |
               assert_eq!(.message, "[shop.test] fast-cache mu-plugin: Call to undefined function cache_boot()")
+
+  - name: a plugin passing bad data into WooCommerce is blamed, not WooCommerce
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/bakery/logs/apache2/bakery_error.log
+          message: |-
+            [Sat Oct 31 08:44:47.911000 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Call to a member function get_price() on bool in /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/includes/wc-product-functions.php:1544\nStack trace:\n#0 /home/bakery/webapps/bakery/public/wp-content/plugins/cartflows-pro/modules/checkout/classes/class-cartflows-pro-order-bump-product.php(1327): wc_get_price_including_tax()\n#1 /home/bakery/webapps/bakery/public/wp-includes/class-wp-hook.php(353): Cartflows_Pro_Order_Bump_Product->add_pre_checked_order_bumps()\n#2 {main}\n  thrown in /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/includes/wc-product-functions.php on line 1544'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[bakery.test] cartflows-pro plugin: Call to a member function get_price() on bool")
+              assert_eq!(.file, "public/wp-content/plugins/woocommerce/includes/wc-product-functions.php")
+
+  - name: a Code Snippets snippet is named by its function
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/bakery/logs/apache2/bakery_error.log
+          message: |-
+            [Sat Oct 31 20:11:14.135637 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Call to a member function get_orders() on null in /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/src/Internal/DataStores/Orders/OrdersTableDataStore.php:3382\nStack trace:\n#0 /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/includes/class-wc-data-store.php(224): Automattic\\WooCommerce\\Internal\\DataStores\\Orders\\OrdersTableDataStore->query()\n#1 /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/includes/wc-order-functions.php(77): WC_Order_Query->get_orders()\n#2 /home/bakery/webapps/bakery/public/wp-content/plugins/code-snippets/php/snippet-ops.php(917) : eval()'d code(43): wc_get_orders()\n#3 /home/bakery/webapps/bakery/public/wp-includes/class-wp-hook.php(353): idod_delete_remaining_draft_orders()\n#4 [internal function]: shutdown_action_hook()\n#5 {main}\n  thrown in /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/src/Internal/DataStores/Orders/OrdersTableDataStore.php on line 3382'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[bakery.test] idod_delete_remaining_draft_orders() snippet: Call to a member function get_orders() on null")
+
+  - name: a plugin failing inside its own hook stays blamed when WordPress calls it
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/bakery/logs/apache2/bakery_error.log
+          message: |-
+            [Sat Oct 31 08:44:47.911000 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught TypeError: count(): Argument #1 must be of type Countable in /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/includes/class-wc-cart.php:120\nStack trace:\n#0 /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/includes/class-wc-cart.php(98): WC_Cart->totals()\n#1 /home/bakery/webapps/bakery/public/wp-includes/class-wp-hook.php(324): WC_Cart->init()\n#2 /home/bakery/webapps/bakery/public/wp-content/plugins/acme-forms/acme.php(40): do_action()\n#3 {main}\n  thrown in /home/bakery/webapps/bakery/public/wp-content/plugins/woocommerce/includes/class-wc-cart.php on line 120'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[bakery.test] woocommerce plugin: count(): Argument #1 must be of type Countable")

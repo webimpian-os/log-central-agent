@@ -135,13 +135,37 @@ transforms:
       if contains(message, "ABSPATH") { abort }
       if trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/') { abort }
 
-      component = parse_regex(file, r'(?:^|/)wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)') ?? null
-      if component == null {
-        # Errors inside WordPress itself: blame the nearest plugin or theme.
-        component = parse_regex(trace, r'wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)/') ?? null
+      owner = parse_regex(file, r'(?:^|/)wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)') ?? null
+      owner_key = if owner != null { string!(owner.kind) + "/" + string!(owner.name) } else { "" }
+      component = owner
+      snippet = ""
+      settled = false
+      # The first frame from other code is the caller that misused it; WordPress itself calling in means the owner broke.
+      for_each(split(trace, "\n")) -> |index, frame| {
+        if !settled {
+          if contains(frame, "/code-snippets/") && contains(frame, "eval()'d code") {
+            next = string(get(split(trace, "\n"), [index + 1]) ?? "") ?? ""
+            callee = parse_regex(next, r'\): (?P<fn>[^\s()]+)\(\)$') ?? {}
+            snippet = string(callee.fn) ?? ""
+            snippet = if snippet == "" || snippet == "eval" { "code" } else { snippet + "()" }
+            settled = true
+          } else {
+            found = parse_regex(frame, r'wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)/') ?? null
+            if found != null {
+              if string!(found.kind) + "/" + string!(found.name) != owner_key {
+                component = found
+                settled = true
+              }
+            } else if owner != null && !contains(frame, "{main}") && !contains(frame, "[internal function]") {
+              settled = true
+            }
+          }
+        }
       }
       culprit = ""
-      if component != null {
+      if snippet != "" {
+        culprit = snippet + " snippet: "
+      } else if component != null {
         kind = string!(component.kind)
         suffix = " plugin: "
         if kind == "themes" { suffix = " theme: " } else if kind == "mu-plugins" { suffix = " mu-plugin: " }
