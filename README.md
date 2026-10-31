@@ -1,6 +1,22 @@
-# log-central-agent
+<p align="center">
+  <img src="docs/logo.svg" width="96" height="96" alt="log-central-agent logo">
+</p>
 
-Watches every site on a RunCloud or Plesk server and reports problems to [Log Central](https://github.com/webimpian-os/log-central-portal):
+<h1 align="center">log-central-agent</h1>
+
+<p align="center">
+  Watches every site on a RunCloud or Plesk server and reports problems to <a href="https://github.com/webimpian-os/log-central-portal">Log Central</a>.
+</p>
+
+<p align="center">
+  <a href="https://github.com/webimpian-os/log-central-agent/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/webimpian-os/log-central-agent/tests.yml?branch=main&label=tests&style=flat-square" alt="Tests"></a>
+  <a href="https://github.com/webimpian-os/log-central-agent/releases/latest"><img src="https://img.shields.io/github/v/release/webimpian-os/log-central-agent?style=flat-square&color=6366f1" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/panels-RunCloud%20%7C%20Plesk-0ea5e9?style=flat-square" alt="Panels: RunCloud and Plesk">
+  <a href="https://vector.dev"><img src="https://img.shields.io/badge/Vector-0.61.0-8b5cf6?style=flat-square" alt="Vector 0.61.0"></a>
+  <img src="https://img.shields.io/badge/limits-%C2%BD%20CPU%20%C2%B7%20256%20MB-34d399?style=flat-square" alt="Limits: half a CPU core and 256 MB">
+</p>
+
+It reports three kinds of problems:
 
 - **PHP errors:** a WordPress "critical error" page becomes an error you can see, instead of one nobody notices.
 - **Failing sites:** at least half of a site's requests in a minute, and at least 5, getting a server error (5xx), like a broken page or a database that's down.
