@@ -12,6 +12,10 @@ It runs once per server. Nothing is installed in WordPress, and the Log Central 
 
 ![The agent reads each site's Apache and nginx logs, keeps real PHP errors, failing sites and traffic spikes, labels them with the site and sends them to Log Central](docs/how-it-works.svg)
 
+For PHP errors, most of what the logs hold is noise. On one real server with 6 sites:
+
+![Of 167,832 PHP messages, 2,036 were fatal errors, 1,055 were real errors once bots were dropped, and they formed 40 error groups](docs/php-errors.svg)
+
 ## Install
 
 As root on a RunCloud or Plesk server:
