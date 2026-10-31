@@ -389,6 +389,42 @@ tests:
             source: |
               assert_eq!(.message, "[shop.test] fast-cache mu-plugin: Call to undefined function cache_boot()")
 
+  - name: a PHP built-in switched off in the site's PHP settings is tagged
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/bakery/logs/apache2/bakery_error.log
+          message: |-
+            [Sun Nov 01 04:03:22.694640 2026] [proxy_fcgi:error] [pid 3972398:tid 3972513] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Call to undefined function ignore_user_abort() in /home/bakery/webapps/bakery/public/wp-cron.php:19\nStack trace:\n#0 {main}\n  thrown in /home/bakery/webapps/bakery/public/wp-cron.php on line 19'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Error")
+              assert_eq!(.message, "[bakery.test] Disabled PHP function: Call to undefined function ignore_user_abort()")
+              assert_eq!(.file, "public/wp-cron.php")
+              assert_eq!(.line, 19)
+
+  - name: a switched-off built-in called from a plugin's namespace is tagged instead of the plugin
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-02
+          file: /var/www/vhosts/system/shop.test/logs/error_log
+          message: |-
+            [Tue Oct 20 13:25:40.099250 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Call to undefined function Acme\\Backup\\exec() in /var/www/vhosts/shop.test/httpdocs/wp-content/plugins/acme-backup/src/Runner.php:88\nStack trace:\n#0 /var/www/vhosts/shop.test/httpdocs/wp-includes/class-wp-hook.php(324): Acme\\Backup\\Runner->run()\n#1 {main}\n  thrown in /var/www/vhosts/shop.test/httpdocs/wp-content/plugins/acme-backup/src/Runner.php on line 88'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[shop.test] Disabled PHP function: Call to undefined function Acme\\Backup\\exec()")
+              assert_eq!(.file, "httpdocs/wp-content/plugins/acme-backup/src/Runner.php")
+
   - name: a plugin passing bad data into WooCommerce is blamed, not WooCommerce
     inputs:
       - insert_at: error_lines

@@ -171,6 +171,10 @@ transforms:
         if kind == "themes" { suffix = " theme: " } else if kind == "mu-plugins" { suffix = " mu-plugin: " }
         culprit = replace(string!(component.name), r'\.php$', "") + suffix
       }
+      # Built-ins hosts switch off with disable_functions; fixing the PHP setting beats blaming the caller.
+      if match(message, r'(?i)^Call to undefined function (?:[\w\\]+\\)?(?:exec|shell_exec|system|passthru|popen|proc_\w+|pcntl_\w+|posix_\w+|socket_\w+|stream_socket_\w+|f?sockopen|pfsockopen|ignore_user_abort|set_time_limit|ini_set|ini_alter|ini_restore|putenv|symlink|link|tmpfile|getmyuid|disk_?free_?space|escapeshell(?:cmd|arg)|highlight_file|show_source|fpassthru|virtual|dl|curl_exec|curl_multi_exec|parse_ini_file|mail)\(\)') {
+        culprit = "Disabled PHP function: "
+      }
 
       site_key = string!(.site_key)
       url = string!(.site_url)
