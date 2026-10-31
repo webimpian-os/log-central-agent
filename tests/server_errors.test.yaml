@@ -1,0 +1,218 @@
+tests:
+  - name: nginx timeout keeps the request
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: \"GET /checkout/?step=2 HTTP/1.1\", upstream: \"fastcgi://unix:/var/www/vhosts/system/shop.test/php-fpm.sock:\", host: \"shop.test\", referrer: \"https://shop.test/cart/\""
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Request timed out")
+              assert_eq!(.message, "[shop.test] A request timed out on GET /checkout/")
+              assert_eq!(.url, "https://shop.test/checkout/")
+              assert_eq!(.method, "GET")
+              assert_eq!(.ip, "203.0.113.9")
+              assert_eq!(.referrer, "https://shop.test/cart/")
+              assert_eq!(.trace, "upstream timed out (110: Connection timed out) while reading response header from upstream")
+              assert_eq!(.fingerprint, md5("shop.test|Request timed out"))
+              assert_eq!(.app, "wordpress-sites")
+              assert_eq!(.hostname, "web-02")
+
+  - name: PHP refusing connections on a native NGINX site hides the socket path
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/newsite/logs/nginx/newsite_error.log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 connect() to unix:/var/run/newsite.sock failed (111: Connection refused) while connecting to upstream, client: 203.0.113.9, server: new-site.test, request: \"GET / HTTP/1.1\", upstream: \"fastcgi://unix:/var/run/newsite.sock:\", host: \"new-site.test\""
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "PHP not responding")
+              assert_eq!(.message, "[new-site.test] PHP is not responding on GET /")
+              assert_eq!(.trace, "connect() to unix socket failed (111: Connection refused) while connecting to upstream")
+              assert!(!contains(string!(.trace), "/var/run"))
+
+  - name: nginx unable to reach Apache on Plesk is PHP not responding
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 upstream timed out (110: Connection timed out) while SSL handshaking to upstream, client: 203.0.113.9, server: shop.test, request: \"GET /shop/ HTTP/2.0\", upstream: \"https://198.51.100.20:7081/shop/\", host: \"shop.test\""
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "PHP not responding")
+              assert_eq!(.message, "[shop.test] PHP is not responding on GET /shop/")
+
+  - name: nginx out of connections
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [alert] 12#0: *34 1024 worker_connections are not enough while connecting to upstream, client: 203.0.113.9, server: shop.test, request: \"GET / HTTP/2.0\", host: \"shop.test\""
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "nginx overloaded")
+              assert_eq!(.message, "[shop.test] nginx ran out of connections on GET /")
+
+  - name: PHP closing the connection before answering
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 recv() failed (104: Connection reset by peer) while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: \"POST /wp-admin/admin-ajax.php HTTP/2.0\", host: \"shop.test\""
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "PHP crashed mid-request")
+              assert_eq!(.message, "[shop.test] PHP stopped in the middle of a request on POST /wp-admin/admin-ajax.php")
+
+  - name: Apache timeout on RunCloud
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/demoshop/logs/apache2/demoshop_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] (70007)The timeout specified has expired: AH01075: Error dispatching request to : (polling), referer: https://demo-shop.test/shop/"
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Request timed out")
+              assert_eq!(.message, "[demo-shop.test] A request timed out")
+              assert_eq!(.url, "https://demo-shop.test")
+              assert_eq!(.ip, "203.0.113.9")
+              assert_eq!(.referrer, "https://demo-shop.test/shop/")
+              assert_eq!(.trace, "The timeout specified has expired: Error dispatching request to : (polling)")
+
+  - name: Apache losing PHP mid-request
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/demoshop/logs/apache2/demoshop_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01067: Failed to read FastCGI header"
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "PHP crashed mid-request")
+              assert_eq!(.message, "[demo-shop.test] PHP stopped in the middle of a request")
+
+  - name: Apache unable to connect to PHP
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/demoshop/logs/apache2/demoshop_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01079: failed to make connection to backend: 127.0.0.1, referer: https://demo-shop.test/wp-admin/"
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "PHP not responding")
+              assert_eq!(.fingerprint, md5("demo-shop.test|PHP not responding"))
+
+  - name: a PHP warning about another service timing out is not a server error
+    no_outputs_from: [server_errors, php_fatals]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/demoshop/logs/apache2/demoshop_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: Bugsnag Warning: Couldn\\'t notify (Operation timed out after 10000 milliseconds with 0 bytes received)'"
+          }
+
+  - name: a client giving up mid-upload is not a server error
+    no_outputs_from: [server_errors]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/demoshop/logs/apache2/demoshop_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] (70008)Partial results are valid but processing is incomplete: AH01075: Error dispatching request to : (reading input brigade)"
+          }
+
+  - name: other nginx upstream messages are not reported
+    no_outputs_from: [server_errors]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 upstream sent too big header while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: \"GET / HTTP/2.0\", host: \"shop.test\""
+          }
+
+  - name: PHP warnings sent through nginx are not server errors
+    no_outputs_from: [server_errors]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 FastCGI sent in stderr: \"PHP message: PHP Warning:  Undefined array key \\\"id\\\" in /var/www/vhosts/shop.test/httpdocs/a.php on line 3\" while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: \"GET / HTTP/2.0\", host: \"shop.test\""
+          }
+
+  - name: server errors older than a day are skipped
+    no_outputs_from: [server_errors]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
+            "message": format_timestamp!(from_unix_timestamp!(to_unix_timestamp(now()) - 172800), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: \"GET / HTTP/1.1\", host: \"shop.test\""
+          }

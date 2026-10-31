@@ -1,8 +1,49 @@
 # Sources: config/panels/<panel>.yaml.
 transforms:
-  php_fatals:
+  error_lines:
     type: remap
     inputs: [apache_error_logs, nginx_error_logs]
+    drop_on_abort: true
+    drop_on_error: true
+    source: |
+      raw = string!(.message)
+      fatal = contains(raw, "PHP Fatal error:") || contains(raw, "PHP Parse error:")
+      server = !contains(raw, "FastCGI sent in stderr") && match(raw, r'upstream|worker_connections|AH010(?:67|75|79)')
+      if !fatal && !server { abort }
+
+      host = string(.host) ?? "unknown"
+      log_path = string(.file) ?? ""
+      name = "unknown"
+      domain = ""
+      plesk = parse_regex(log_path, r'^/var/www/vhosts/system/(?P<domain>[^/]+)/logs/') ?? null
+      runcloud = parse_regex(log_path, r'/logs/(?:apache2|nginx)/(?P<webapp>.+?)_error\.log(?:-\d+)?$') ?? null
+      if plesk != null {
+        domain = string!(plesk.domain)
+        name = domain
+      } else if runcloud != null {
+        name = string!(runcloud.webapp)
+        row, missing = get_enrichment_table_record("sites", {"webapp": name})
+        if missing == null { domain = string(row.domain) ?? "" }
+      }
+      if domain == "" {
+        # Native NGINX sites on RunCloud have no Apache config.
+        found = parse_regex(raw, r', server: (?P<v>[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+),') ?? {}
+        domain = string(found.v) ?? ""
+      }
+
+      .host = host
+      .site_key = host + "/" + name
+      .site_label = name
+      .site_url = ""
+      if domain != "" {
+        .site_key = domain
+        .site_label = domain
+        .site_url = "https://" + domain
+      }
+
+  php_fatals:
+    type: remap
+    inputs: [error_lines]
     drop_on_abort: true
     drop_on_error: true
     source: |
@@ -16,7 +57,6 @@ transforms:
       referrer = ""
       method = "-"
       path = ""
-      server = ""
 
       if starts_with(raw, "[") {
         entry = parse_regex(raw, r'^\[(?P<time>\w{3} \w{3} \d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? \d{4})\] \[proxy_fcgi:error\] \[[^\]]*\](?: \[client (?P<client>[^\]]*)\])? AH01071: Got error \'(?P<body>.*)\'(?:, referer: (?P<referer>.*))?$') ?? null
@@ -34,8 +74,6 @@ transforms:
         context = string(entry.context) ?? ""
         found = parse_regex(context, r'client: (?P<v>[^,]+)') ?? {}
         client = string(found.v) ?? ""
-        found = parse_regex(context, r'server: (?P<v>[^,]+)') ?? {}
-        server = string(found.v) ?? ""
         found = parse_regex(context, r'request: "(?P<method>[A-Z]+) (?P<path>[^ "?]*)') ?? {}
         method = string(found.method) ?? "-"
         path = string(found.path) ?? ""
@@ -97,31 +135,9 @@ transforms:
       if contains(message, "ABSPATH") { abort }
       if trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/') { abort }
 
-      host = string(.host) ?? "unknown"
-      log_path = string(.file) ?? ""
-      name = "unknown"
-      domain = ""
-      plesk = parse_regex(log_path, r'^/var/www/vhosts/system/(?P<domain>[^/]+)/logs/') ?? null
-      runcloud = parse_regex(log_path, r'/logs/(?:apache2|nginx)/(?P<webapp>.+?)_error\.log(?:-\d+)?$') ?? null
-      if plesk != null {
-        domain = string!(plesk.domain)
-        name = domain
-      } else if runcloud != null {
-        name = string!(runcloud.webapp)
-        row, missing = get_enrichment_table_record("sites", {"webapp": name})
-        if missing == null { domain = string(row.domain) ?? "" }
-      }
-      # Native NGINX sites on RunCloud have no Apache config.
-      if domain == "" && match(server, r'^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$') { domain = server }
-
-      site_key = host + "/" + name
-      label = name
-      url = ""
-      if domain != "" {
-        site_key = domain
-        label = domain
-        url = "https://" + domain + path
-      }
+      site_key = string!(.site_key)
+      url = string!(.site_url)
+      if url != "" { url = url + path }
 
       . = {
         "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
@@ -129,7 +145,7 @@ transforms:
         "app": "SECRET[settings.app]",
         "environment": "production",
         "exception": exception,
-        "message": "[" + label + "] " + message,
+        "message": "[" + string!(.site_label) + "] " + message,
         "file": file,
         "line": line,
         "trace": trace,
@@ -137,7 +153,7 @@ transforms:
         "method": method,
         "user_id": 0,
         "input": "{}",
-        "hostname": host,
+        "hostname": string!(.host),
         "entrypoint": "http",
         "ip": client,
         "referrer": referrer,
@@ -150,6 +166,94 @@ transforms:
     # A first install reads whole logs; skip old fatals.
     condition: |
       to_unix_timestamp(parse_timestamp!(.timestamp, "%Y-%m-%d %H:%M:%S%.f", timezone: "UTC")) >= to_unix_timestamp(now()) - 86400
+
+  server_errors:
+    type: remap
+    inputs: [error_lines]
+    drop_on_abort: true
+    drop_on_error: true
+    source: |
+      raw = string!(.message)
+      if contains(raw, "FastCGI sent in stderr") || contains(raw, "PHP Fatal error:") || contains(raw, "PHP Parse error:") { abort }
+
+      exception = ""
+      time = null
+      client = ""
+      referrer = ""
+      method = "-"
+      path = ""
+      detail = ""
+
+      if starts_with(raw, "[") {
+        entry = parse_regex(raw, r'^\[(?P<time>\w{3} \w{3} \d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? \d{4})\] \[proxy_fcgi:error\] \[[^\]]*\](?: \[client (?P<client>[^\]]*)\])? (?:\((?P<code>\d+)\)(?P<reason>[^:]*): )?(?P<id>AH\d+): (?P<text>.*?)(?:, referer: (?P<referer>.*))?$') ?? null
+        if entry == null { abort }
+        id = string!(entry.id)
+        code = string(entry.code) ?? ""
+        if id == "AH01079" { exception = "PHP not responding" }
+        if id == "AH01067" || (id == "AH01075" && code == "104") { exception = "PHP crashed mid-request" }
+        if id == "AH01075" && code == "70007" { exception = "Request timed out" }
+        time = parse_timestamp!(string!(entry.time), "%a %b %d %H:%M:%S%.f %Y")
+        client = replace(string(entry.client) ?? "", r':\d+$', "")
+        referrer = string(entry.referer) ?? ""
+        detail = strip_whitespace(string(entry.reason) ?? "")
+        if detail != "" { detail = detail + ": " }
+        detail = detail + string!(entry.text)
+      } else {
+        entry = parse_regex(raw, r'^(?P<time>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?:error|crit|alert)\] \d+#\d+: (?:\*\d+ )?(?P<text>.*?)(?:, client: (?P<context>.*))?$') ?? null
+        if entry == null { abort }
+        text = string!(entry.text)
+        if match(text, r'^upstream timed out .* while reading') { exception = "Request timed out" }
+        if match(text, r'^(?:connect\(\) .*failed|upstream timed out) .* while (?:connecting|SSL handshaking) to upstream|^no live upstreams') { exception = "PHP not responding" }
+        if match(text, r'^upstream prematurely closed connection|^recv\(\) failed \(104: Connection reset by peer\)') { exception = "PHP crashed mid-request" }
+        if contains(text, "worker_connections are not enough") { exception = "nginx overloaded" }
+        time = parse_timestamp!(string!(entry.time), "%Y/%m/%d %H:%M:%S")
+        context = "client: " + (string(entry.context) ?? "")
+        found = parse_regex(context, r'client: (?P<v>[^,]+)') ?? {}
+        client = string(found.v) ?? ""
+        found = parse_regex(context, r'request: "(?P<method>[A-Z]+) (?P<path>[^ "?]*)') ?? {}
+        method = string(found.method) ?? "-"
+        path = string(found.path) ?? ""
+        found = parse_regex(context, r'referrer: "(?P<v>[^"]*)"') ?? {}
+        referrer = string(found.v) ?? ""
+        detail = replace(text, r'unix:\S+', "unix socket")
+      }
+      if exception == "" { abort }
+      # A first install reads whole logs; skip old errors.
+      if to_unix_timestamp(time) < to_unix_timestamp(now()) - 86400 { abort }
+
+      sentences = {
+        "PHP not responding": "PHP is not responding",
+        "Request timed out": "A request timed out",
+        "PHP crashed mid-request": "PHP stopped in the middle of a request",
+        "nginx overloaded": "nginx ran out of connections"
+      }
+      message = "[" + string!(.site_label) + "] " + string!(get!(sentences, [exception]))
+      url = string!(.site_url)
+      if path != "" {
+        message = message + " on " + method + " " + path
+        if url != "" { url = url + path }
+      }
+
+      . = {
+        "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
+        "fingerprint": md5(string!(.site_key) + "|" + exception),
+        "app": "SECRET[settings.app]",
+        "environment": "production",
+        "exception": exception,
+        "message": message,
+        "file": "",
+        "line": 0,
+        "trace": detail,
+        "url": url,
+        "method": method,
+        "user_id": 0,
+        "input": "{}",
+        "hostname": string!(.host),
+        "entrypoint": "http",
+        "ip": client,
+        "referrer": referrer,
+        "user_agent": ""
+      }
 
   requests:
     type: remap
@@ -358,10 +462,10 @@ transforms:
     threshold: 300
     window_secs: 60
 
-  # Kept out of server_cap so a flood of PHP errors can't hide a traffic spike.
+  # Kept out of server_cap so a flood of PHP errors can't hide these.
   one_alert_per_site:
     type: throttle
-    inputs: [traffic_alerts]
+    inputs: [traffic_alerts, server_errors]
     key_field: "{{ fingerprint }}"
     threshold: 1
     window_secs: 300

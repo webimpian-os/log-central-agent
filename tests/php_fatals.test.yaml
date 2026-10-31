@@ -1,7 +1,7 @@
 tests:
   - name: uncaught error becomes a Log Central error with a site-relative trace
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -36,7 +36,7 @@ tests:
 
   - name: plain fatal keeps only the first fatal on the line
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -57,7 +57,7 @@ tests:
 
   - name: fatal after other PHP messages, with escaped backslashes and a cut-off trace
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -79,7 +79,7 @@ tests:
 
   - name: trace cut off inside a home path keeps no server path
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -95,7 +95,7 @@ tests:
 
   - name: parse error
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -115,7 +115,7 @@ tests:
 
   - name: unknown site on a rotated log falls back to the webapp name and a namespaced class
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -137,7 +137,7 @@ tests:
   - name: bot hitting a WordPress file directly is not reported
     no_outputs_from: [php_fatals]
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -148,7 +148,7 @@ tests:
   - name: fatal caused by a missing ABSPATH is not reported
     no_outputs_from: [php_fatals]
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -159,7 +159,7 @@ tests:
   - name: warnings alone are not reported
     no_outputs_from: [php_fatals]
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -170,7 +170,7 @@ tests:
   - name: apache's own errors are not reported
     no_outputs_from: [php_fatals]
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -200,7 +200,7 @@ tests:
 
   - name: nginx entry on Plesk keeps the request and marks where nginx cut the trace
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-02
@@ -231,7 +231,7 @@ tests:
 
   - name: nginx entry with quotes, raw backslashes and a full trace
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-02
@@ -259,7 +259,7 @@ tests:
 
   - name: apache entry on Plesk takes the domain from the log folder
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-02
@@ -283,7 +283,7 @@ tests:
 
   - name: RunCloud native NGINX site takes the domain from nginx
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-01
@@ -304,7 +304,7 @@ tests:
 
   - name: nginx entry cut before its request details is still reported
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-02
@@ -328,7 +328,7 @@ tests:
   - name: nginx's own errors are not reported
     no_outputs_from: [php_fatals]
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-02
@@ -338,7 +338,7 @@ tests:
 
   - name: PHP 5 uncaught exception and shortened path arguments
     inputs:
-      - insert_at: php_fatals
+      - insert_at: error_lines
         type: log
         log_fields:
           host: web-02
