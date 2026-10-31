@@ -286,6 +286,8 @@ transforms:
         addresses = split(forwarded, ",")
         ip = strip_whitespace(string!(addresses[-1]))
       }
+      method = string(entry.method) ?? ""
+      path = string(entry.path) ?? ""
 
       host = string(.host) ?? "unknown"
       log_path = string(.file) ?? ""
@@ -319,8 +321,9 @@ transforms:
         "host": host,
         "status": to_int!(entry.status),
         "ip": ip,
-        "path": truncate(string(entry.path) ?? "", 200),
-        "agent": truncate(string!(entry.agent), 200)
+        "path": truncate(path, 200),
+        "agent": truncate(string!(entry.agent), 200),
+        "login": method == "POST" && (ends_with(path, "/wp-login.php") || ends_with(path, "/xmlrpc.php"))
       }
 
   traffic:
@@ -330,9 +333,12 @@ transforms:
     source: |
       -- Caps memory when a flood brings endless new IPs, paths or user agents.
       MAX_KEYS = 500
+      WARMUP_MINUTES = 30
+      SMOOTHING_MINUTES = 60
 
       function init()
         sites = {}
+        usual = {}
       end
 
       local function counter()
@@ -362,14 +368,30 @@ transforms:
         return result
       end
 
+      local function learn(key, requests)
+        local history = usual[key]
+        if not history then
+          history = { level = 0, minutes = 0 }
+          usual[key] = history
+        end
+        history.minutes = history.minutes + 1
+        if history.minutes <= WARMUP_MINUTES then
+          history.level = history.level + (requests - history.level) / history.minutes
+        else
+          -- An attack can't drag the usual level up quickly.
+          local capped = math.min(requests, history.level * 3 + 10)
+          history.level = history.level + (capped - history.level) / SMOOTHING_MINUTES
+        end
+      end
+
       function process(event, emit)
         local log = event.log
         local site = sites[log.site_key]
         if not site then
           site = {
             label = log.label, url = log.url, host = log.host,
-            requests = 0, server_errors = 0, statuses = {},
-            ips = counter(), paths = counter(), error_paths = counter(), agents = counter(),
+            requests = 0, server_errors = 0, logins = 0, statuses = {},
+            ips = counter(), paths = counter(), error_paths = counter(), agents = counter(), login_ips = counter(),
           }
           sites[log.site_key] = site
         end
@@ -383,18 +405,40 @@ transforms:
           site.server_errors = site.server_errors + 1
           tally(site.error_paths, log.path)
         end
+        if log.login then
+          site.logins = site.logins + 1
+          tally(site.login_ips, log.ip)
+        end
       end
 
       function flush(emit)
         for key, site in pairs(sites) do
+          local history = usual[key]
+          local usual_requests = nil
+          if history and history.minutes >= WARMUP_MINUTES then
+            usual_requests = math.floor(history.level + 0.5)
+          end
           emit({ log = {
             site_key = key, label = site.label, url = site.url, host = site.host,
             requests = site.requests, server_errors = site.server_errors, statuses = site.statuses,
+            usual_requests = usual_requests, logins = site.logins,
             top_ips = top(site.ips, "ip", 5),
             top_paths = top(site.paths, "path", 5),
             top_error_paths = top(site.error_paths, "path", 5),
             top_user_agents = top(site.agents, "user_agent", 3),
+            top_login_ips = top(site.login_ips, "ip", 5),
           } })
+        end
+        for key, history in pairs(usual) do
+          if not sites[key] then
+            learn(key, 0)
+            if history.minutes > WARMUP_MINUTES and history.level < 0.01 then
+              usual[key] = nil
+            end
+          end
+        end
+        for key, site in pairs(sites) do
+          learn(key, site.requests)
         end
         sites = {}
       end
@@ -414,32 +458,21 @@ transforms:
     source: |
       requests = to_int!(.requests)
       errors = to_int!(.server_errors)
-      spike = requests >= 3000
+      usual = -1
+      if .usual_requests != null { usual = to_int(.usual_requests) ?? -1 }
+      login_top = to_int(.top_login_ips[0].requests) ?? 0
       failing = errors >= 5 && errors * 2 >= requests
-      if !spike && !failing { abort }
+      spike = requests >= 3000 || (usual >= 0 && requests >= 300 && requests >= usual * 10)
+      brute = login_top >= 60
+      if !failing && !spike && !brute { abort }
 
+      label = "[" + string!(.label) + "] "
+      site_key = string!(.site_key)
       top_ip = string(.top_ips[0].ip) ?? ""
-      exception = "Site failing"
-      message = to_string(errors) + " of " + to_string(requests) + " requests got a server error in one minute"
-      if spike {
-        exception = "Traffic spike"
-        message = to_string(requests) + " requests in one minute"
-        share = to_int(floor((to_int(.top_ips[0].requests) ?? 0) * 100 / requests ?? 0))
-        if share >= 10 {
-          message = message + ", " + to_string(share) + "% from " + top_ip
-        } else {
-          message = message + " from many addresses"
-        }
-        if errors > 0 { message = message + ", " + to_string(errors) + " server errors" }
-      }
-
-      . = {
+      common = {
         "timestamp": format_timestamp!(now(), "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
-        "fingerprint": md5(string!(.site_key) + "|" + exception),
         "app": "SECRET[settings.app]",
         "environment": "production",
-        "exception": exception,
-        "message": "[" + string!(.label) + "] " + message,
         "file": "",
         "line": 0,
         "trace": "",
@@ -448,12 +481,15 @@ transforms:
         "user_id": 0,
         "input": encode_json({
           "requests": requests,
+          "usual_requests": .usual_requests,
           "server_errors": errors,
           "statuses": .statuses,
           "top_ips": .top_ips,
           "top_paths": .top_paths,
           "top_error_paths": .top_error_paths,
-          "top_user_agents": .top_user_agents
+          "top_user_agents": .top_user_agents,
+          "login_attempts": .logins,
+          "top_login_ips": .top_login_ips
         }),
         "hostname": string!(.host),
         "entrypoint": "http",
@@ -461,6 +497,35 @@ transforms:
         "referrer": "",
         "user_agent": string(.top_user_agents[0].user_agent) ?? ""
       }
+      alerts = []
+
+      if spike {
+        message = to_string(requests) + " requests in one minute"
+        if usual > 0 {
+          message = message + " (usually about " + to_string(usual) + ")"
+        } else if usual == 0 {
+          message = message + " (usually under 1)"
+        }
+        share = to_int(floor((to_int(.top_ips[0].requests) ?? 0) * 100 / requests ?? 0))
+        if share >= 10 {
+          message = message + ", " + to_string(share) + "% from " + top_ip
+        } else {
+          message = message + " from many addresses"
+        }
+        if errors > 0 { message = message + ", " + to_string(errors) + " server errors" }
+        alerts = push(alerts, merge(common, {"exception": "Traffic spike", "message": label + message, "fingerprint": md5(site_key + "|Traffic spike")}))
+      } else if failing {
+        message = to_string(errors) + " of " + to_string(requests) + " requests got a server error in one minute"
+        alerts = push(alerts, merge(common, {"exception": "Site failing", "message": label + message, "fingerprint": md5(site_key + "|Site failing")}))
+      }
+
+      if brute {
+        login_ip = string(.top_login_ips[0].ip) ?? ""
+        message = to_string(login_top) + " login attempts in one minute from " + login_ip
+        alerts = push(alerts, merge(common, {"exception": "Brute force", "message": label + message, "fingerprint": md5(site_key + "|Brute force"), "ip": login_ip}))
+      }
+
+      . = alerts
 
   one_per_fingerprint:
     type: throttle

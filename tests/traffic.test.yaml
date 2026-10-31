@@ -218,3 +218,163 @@ tests:
           host: web-01
           requests: 4
           server_errors: 4
+
+  - name: login posts are marked, other requests are not
+    inputs:
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_access_ssl_log",
+            "message": "203.0.113.66 - - [" + format_timestamp!(now(), "%d/%b/%Y:%H:%M:%S %z") + "] \"POST /blog/xmlrpc.php HTTP/1.1\" 200 370 \"-\" \"python-requests/2.31\""
+          }
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_access_ssl_log",
+            "message": "203.0.113.67 - - [" + format_timestamp!(now(), "%d/%b/%Y:%H:%M:%S %z") + "] \"GET /wp-login.php HTTP/1.1\" 200 4410 \"-\" \"Mozilla/5.0\""
+          }
+    outputs:
+      - extract_from: requests
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.login, .ip == "203.0.113.66")
+
+  - name: one address hammering the login page is a brute force attack
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 400
+          server_errors: 0
+          logins: 250
+          top_login_ips[0].ip: 203.0.113.66
+          top_login_ips[0].requests: 240
+          top_ips[0].ip: 203.0.113.66
+          top_ips[0].requests: 240
+    outputs:
+      - extract_from: traffic_alerts
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Brute force")
+              assert_eq!(.message, "[shop.test] 240 login attempts in one minute from 203.0.113.66")
+              assert_eq!(.ip, "203.0.113.66")
+              assert_eq!(.fingerprint, md5("web-02/shop.test|Brute force"))
+              assert_eq!(parse_json!(.input).login_attempts, 250)
+
+  - name: a few login attempts are not an attack
+    no_outputs_from: [traffic_alerts]
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 400
+          server_errors: 0
+          top_login_ips[0].ip: 203.0.113.66
+          top_login_ips[0].requests: 59
+
+  - name: a flood on the login page raises both a spike and a brute force alert
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 5000
+          server_errors: 0
+          top_ips[0].ip: 203.0.113.66
+          top_ips[0].requests: 4000
+          top_login_ips[0].ip: 203.0.113.66
+          top_login_ips[0].requests: 4000
+    outputs:
+      - extract_from: traffic_alerts
+        conditions:
+          - type: vrl
+            source: |
+              assert!(includes(["Traffic spike", "Brute force"], .exception))
+
+  - name: ten times a site's usual traffic is a spike even below 3,000
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 600
+          usual_requests: 50
+          server_errors: 0
+          top_ips[0].ip: 203.0.113.50
+          top_ips[0].requests: 240
+    outputs:
+      - extract_from: traffic_alerts
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Traffic spike")
+              assert_eq!(.message, "[shop.test] 600 requests in one minute (usually about 50), 40% from 203.0.113.50")
+              assert_eq!(parse_json!(.input).usual_requests, 50)
+
+  - name: a usually silent site getting real traffic is a spike
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 400
+          usual_requests: 0
+          server_errors: 0
+          top_ips[0].ip: 198.51.100.7
+          top_ips[0].requests: 4
+    outputs:
+      - extract_from: traffic_alerts
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[shop.test] 400 requests in one minute (usually under 1) from many addresses")
+
+  - name: small jumps on a quiet site are not spikes
+    no_outputs_from: [traffic_alerts]
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 250
+          usual_requests: 5
+          server_errors: 0
+
+  - name: no comparison until a site's usual traffic is known
+    no_outputs_from: [traffic_alerts]
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 2000
+          server_errors: 0
