@@ -16,9 +16,9 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - name: Attach the installer
+      - name: Attach the scripts
         # Log Central's install command downloads releases/latest/download/install.sh.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" install.sh uninstall.sh --clobber
+        run: gh release upload "$TAG" install.sh uninstall.sh php-log-limit.sh --clobber
