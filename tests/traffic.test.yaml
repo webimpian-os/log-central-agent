@@ -117,18 +117,19 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "Traffic spike")
+              assert_eq!(.channel, "traffic")
+              assert_eq!(.level, "warning")
               assert_eq!(.message, "[shop.test] 3200 requests in one minute, 62% from 203.0.113.50")
-              assert_eq!(.fingerprint, md5("web-02/shop.test|Traffic spike"))
+              assert_eq!(.throttle_key, md5("web-02/shop.test|Traffic spike|log"))
               assert_eq!(.app, "wordpress-sites")
-              assert_eq!(.url, "https://shop.test")
-              assert_eq!(.ip, "203.0.113.50")
-              assert_eq!(.user_agent, "python-requests/2.31")
               assert_eq!(.hostname, "web-02")
-              assert_eq!(.line, 0)
-              input = parse_json!(.input)
-              assert_eq!(input.requests, 3200)
-              assert_eq!(input.top_paths[0].path, "/wp-login.php")
+              assert!(!exists(.exception))
+              context = parse_json!(.context)
+              assert_eq!(context.kind, "Traffic spike")
+              assert_eq!(context.url, "https://shop.test")
+              assert_eq!(context.ip, "203.0.113.50")
+              assert_eq!(context.requests, 3200)
+              assert_eq!(context.top_paths[0].path, "/wp-login.php")
 
   - name: a spike that breaks the site says how many requests failed
     inputs:
@@ -190,8 +191,9 @@ tests:
           - type: vrl
             source: |
               assert_eq!(.exception, "Site failing")
-              assert_eq!(.message, "[bakery.test] 8 of 10 requests got a server error in one minute")
+              assert_eq!(.message, "[bakery.test] 8 of 10 requests got a server error in one minute, mostly on /")
               assert_eq!(.fingerprint, md5("web-01/bakery|Site failing"))
+              assert_eq!(.throttle_key, .fingerprint)
 
   - name: scattered server errors are not reported
     no_outputs_from: [traffic_alerts]
@@ -265,11 +267,14 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "Brute force")
+              assert_eq!(.channel, "security")
+              assert_eq!(.level, "warning")
               assert_eq!(.message, "[shop.test] 240 login attempts in one minute from 203.0.113.66")
-              assert_eq!(.ip, "203.0.113.66")
-              assert_eq!(.fingerprint, md5("web-02/shop.test|Brute force"))
-              assert_eq!(parse_json!(.input).login_attempts, 250)
+              assert_eq!(.throttle_key, md5("web-02/shop.test|Brute force|log"))
+              context = parse_json!(.context)
+              assert_eq!(context.kind, "Brute force")
+              assert_eq!(context.ip, "203.0.113.66")
+              assert_eq!(context.login_attempts, 250)
 
   - name: a few login attempts are not an attack
     no_outputs_from: [traffic_alerts]
@@ -286,7 +291,7 @@ tests:
           top_login_ips[0].ip: 203.0.113.66
           top_login_ips[0].requests: 59
 
-  - name: a flood on the login page raises both a spike and a brute force alert
+  - name: a flood on the login page logs both a spike and a brute force attack
     inputs:
       - insert_at: traffic_alerts
         type: log
@@ -306,7 +311,7 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert!(includes(["Traffic spike", "Brute force"], .exception))
+              assert!(includes(["Traffic spike", "Brute force"], parse_json!(.context).kind))
 
   - name: ten times a site's usual traffic is a spike even below 3,000
     inputs:
@@ -327,9 +332,9 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "Traffic spike")
+              assert_eq!(.channel, "traffic")
               assert_eq!(.message, "[shop.test] 600 requests in one minute (usually about 50), 40% from 203.0.113.50")
-              assert_eq!(parse_json!(.input).usual_requests, 50)
+              assert_eq!(parse_json!(.context).usual_requests, 50)
 
   - name: a usually silent site getting real traffic is a spike
     inputs:
@@ -378,3 +383,30 @@ tests:
           host: web-02
           requests: 2000
           server_errors: 0
+
+  - name: a breaking spike goes to Errors and a brute force attack to Logs
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 5000
+          server_errors: 4100
+          top_ips[0].ip: 203.0.113.66
+          top_ips[0].requests: 500
+          top_login_ips[0].ip: 203.0.113.66
+          top_login_ips[0].requests: 300
+    outputs:
+      - extract_from: traffic_split.errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Traffic spike")
+      - extract_from: traffic_split.logs
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "security")

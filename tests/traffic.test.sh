@@ -105,7 +105,7 @@ run "$work/minute" one_minute
 alerts="$work/minute/alerts.json"
 grep -q '"message":"\[demo-shop.test\] 3200 requests in one minute, 62% from 203.0.113.50"' "$alerts" \
     || fail "missing the traffic spike" "$alerts"
-grep -q '"message":"\[bakery.test\] 8 of 10 requests got a server error in one minute"' "$alerts" \
+grep -q '"message":"\[bakery.test\] 8 of 10 requests got a server error in one minute, mostly on /"' "$alerts" \
     || fail "missing the failing site" "$alerts"
 grep -q '"message":"\[login.test\] 100 login attempts in one minute from 203.0.113.66"' "$alerts" \
     || fail "missing the brute force attack" "$alerts"

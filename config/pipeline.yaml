@@ -469,6 +469,19 @@ transforms:
       label = "[" + string!(.label) + "] "
       site_key = string!(.site_key)
       top_ip = string(.top_ips[0].ip) ?? ""
+      url = string!(.url)
+      stats = {
+        "requests": requests,
+        "usual_requests": .usual_requests,
+        "server_errors": errors,
+        "statuses": .statuses,
+        "top_ips": .top_ips,
+        "top_paths": .top_paths,
+        "top_error_paths": .top_error_paths,
+        "top_user_agents": .top_user_agents,
+        "login_attempts": .logins,
+        "top_login_ips": .top_login_ips
+      }
       common = {
         "timestamp": format_timestamp!(now(), "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
         "app": "SECRET[settings.app]",
@@ -476,29 +489,26 @@ transforms:
         "file": "",
         "line": 0,
         "trace": "",
-        "url": string!(.url),
+        "url": url,
         "method": "-",
         "user_id": 0,
-        "input": encode_json({
-          "requests": requests,
-          "usual_requests": .usual_requests,
-          "server_errors": errors,
-          "statuses": .statuses,
-          "top_ips": .top_ips,
-          "top_paths": .top_paths,
-          "top_error_paths": .top_error_paths,
-          "top_user_agents": .top_user_agents,
-          "login_attempts": .logins,
-          "top_login_ips": .top_login_ips
-        }),
+        "input": encode_json(stats),
         "hostname": string!(.host),
         "entrypoint": "http",
         "ip": top_ip,
         "referrer": "",
         "user_agent": string(.top_user_agents[0].user_agent) ?? ""
       }
+      log_row = {
+        "timestamp": common.timestamp,
+        "app": "SECRET[settings.app]",
+        "environment": "production",
+        "level": "warning",
+        "hostname": string!(.host)
+      }
       alerts = []
 
+      # Only a site that is breaking alerts; activity it handles goes to the Logs page.
       if spike {
         message = to_string(requests) + " requests in one minute"
         if usual > 0 {
@@ -513,16 +523,26 @@ transforms:
           message = message + " from many addresses"
         }
         if errors > 0 { message = message + ", " + to_string(errors) + " server errors" }
-        alerts = push(alerts, merge(common, {"exception": "Traffic spike", "message": label + message, "fingerprint": md5(site_key + "|Traffic spike")}))
+        if errors >= 5 && errors * 10 >= requests {
+          fingerprint = md5(site_key + "|Traffic spike")
+          alerts = push(alerts, merge(common, {"exception": "Traffic spike", "message": label + message, "fingerprint": fingerprint, "throttle_key": fingerprint}))
+        } else {
+          alerts = push(alerts, merge(log_row, {"channel": "traffic", "message": label + message, "context": encode_json(merge({"kind": "Traffic spike", "url": url, "ip": top_ip}, stats)), "throttle_key": md5(site_key + "|Traffic spike|log")}))
+        }
       } else if failing {
         message = to_string(errors) + " of " + to_string(requests) + " requests got a server error in one minute"
-        alerts = push(alerts, merge(common, {"exception": "Site failing", "message": label + message, "fingerprint": md5(site_key + "|Site failing")}))
+        worst_path = string(.top_error_paths[0].path) ?? ""
+        if worst_path != "" && (to_int(.top_error_paths[0].requests) ?? 0) * 2 > errors {
+          message = message + ", mostly on " + worst_path
+        }
+        fingerprint = md5(site_key + "|Site failing")
+        alerts = push(alerts, merge(common, {"exception": "Site failing", "message": label + message, "fingerprint": fingerprint, "throttle_key": fingerprint}))
       }
 
       if brute {
         login_ip = string(.top_login_ips[0].ip) ?? ""
         message = to_string(login_top) + " login attempts in one minute from " + login_ip
-        alerts = push(alerts, merge(common, {"exception": "Brute force", "message": label + message, "fingerprint": md5(site_key + "|Brute force"), "ip": login_ip}))
+        alerts = push(alerts, merge(log_row, {"channel": "security", "message": label + message, "context": encode_json(merge({"kind": "Brute force", "url": url, "ip": login_ip}, stats)), "throttle_key": md5(site_key + "|Brute force|log")}))
       }
 
       . = alerts
@@ -544,9 +564,16 @@ transforms:
   one_alert_per_site:
     type: throttle
     inputs: [traffic_alerts]
-    key_field: "{{ fingerprint }}"
+    key_field: "{{ throttle_key }}"
     threshold: 1
     window_secs: 300
+
+  traffic_split:
+    type: route
+    inputs: [one_alert_per_site]
+    route:
+      errors: '!exists(.channel)'
+      logs: 'exists(.channel)'
 
   server_error_cap:
     type: throttle
@@ -558,11 +585,12 @@ transforms:
 sinks:
   log_central:
     type: http
-    inputs: [server_cap, one_alert_per_site]
+    inputs: [server_cap, traffic_split.errors]
     uri: "SECRET[settings.url]/api/errors"
     method: post
     encoding:
       codec: json
+      except_fields: [throttle_key]
     auth:
       strategy: bearer
       token: "SECRET[settings.token]"
@@ -579,10 +607,10 @@ sinks:
     healthcheck:
       enabled: false
 
-  # One-off server errors are symptoms, so they go to the Logs page, which never alerts.
+  # The Logs page never alerts.
   log_central_logs:
     type: http
-    inputs: [server_error_cap]
+    inputs: [server_error_cap, traffic_split.logs]
     uri: "SECRET[settings.url]/api/logs"
     method: post
     encoding:
