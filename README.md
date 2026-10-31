@@ -67,7 +67,7 @@ It finds the panel itself, asks for the Log Central URL, app slug and app token,
 
 Servers don't update automatically. A new release only reaches a server when you install it there.
 
-To update a server, run the installer from the new tag. Settings and the token are kept:
+To update a server, run the installer from the new version, for example `v1.1.0`. It keeps the server's settings and token, so it won't ask for them again:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/<new-tag>/install.sh | sudo bash
