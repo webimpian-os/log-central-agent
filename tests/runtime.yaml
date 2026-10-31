@@ -1,0 +1,15 @@
+timezone: Asia/Kuala_Lumpur
+
+secret:
+  settings:
+    type: directory
+    path: tests/fixtures/secrets
+    remove_trailing_whitespace: true
+
+enrichment_tables:
+  sites:
+    type: file
+    file:
+      path: tests/fixtures/sites.csv
+      encoding:
+        type: csv

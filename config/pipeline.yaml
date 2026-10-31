@@ -1,0 +1,143 @@
+sources:
+  apache_error_logs:
+    type: file
+    include:
+      - /home/*/logs/apache2/*_error.log
+      # Lets Vector follow logrotate's copytruncate without losing lines.
+      - /home/*/logs/apache2/*_error.log-*
+    exclude:
+      - /home/*/logs/apache2/*.gz
+    read_from: beginning
+    ignore_older_secs: 86400
+    # Otherwise deleted rotated logs keep holding disk space.
+    rotate_wait_secs: 300
+    max_line_bytes: 262144
+
+transforms:
+  php_fatals:
+    type: remap
+    inputs: [apache_error_logs]
+    drop_on_abort: true
+    drop_on_error: true
+    source: |
+      entry = parse_regex(string!(.message), r'^\[(?P<time>\w{3} \w{3} \d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? \d{4})\] \[proxy_fcgi:error\] \[[^\]]*\](?: \[client (?P<client>[^\]]*)\])? AH01071: Got error \'(?P<body>.*)\'(?:, referer: (?P<referer>.*))?$') ?? null
+      if entry == null { abort }
+
+      fatals = filter(split(string!(entry.body), "PHP message: ")) -> |_index, part| {
+        starts_with(part, "PHP Fatal error:") || starts_with(part, "PHP Parse error:")
+      }
+      if length(fatals) == 0 { abort }
+
+      # Later fatals on a line are knock-on failures.
+      text = replace(string!(fatals[0]), r';\s*$', "")
+      text = replace_with(text, r'\\(.)') -> |escaped| {
+        char = string!(escaped.captures[0])
+        if char == "n" { "\n" } else if char == "t" { "\t" } else { char }
+      }
+      text = replace(text, r'/home/[^/\s]+/webapps/[^/\s]+/', "")
+      text = replace(text, r'/home/\S*\.\.\.$', "...")
+
+      exception = if starts_with(text, "PHP Parse error:") { "PHP Parse error" } else { "PHP Fatal error" }
+      message = replace(text, r'^PHP (?:Fatal|Parse) error:\s+', "")
+      file = ""
+      line = 0
+      trace = ""
+
+      uncaught = parse_regex(text, r'(?s)^PHP Fatal error:\s+Uncaught (?P<class>[^\s:]+): (?P<message>.*?) in (?P<file>\S+?):(?P<line>\d+)(?:\n(?P<rest>.*))?$') ?? null
+      plain = parse_regex(text, r'(?s)^PHP (?:Fatal|Parse) error:\s+(?P<message>.*) in (?P<file>\S+) on line (?P<line>\d+)') ?? null
+
+      if uncaught != null {
+        exception = string!(uncaught.class)
+        message = string!(uncaught.message)
+        file = string!(uncaught.file)
+        line = to_int!(uncaught.line)
+        trace = replace(string(uncaught.rest) ?? "", r'^Stack trace:\n', "")
+        trace = replace(trace, r'(?s)\n\s*thrown in .*$', "")
+        if !starts_with(trace, "#") { trace = "" }
+      } else if plain != null {
+        message = string!(plain.message)
+        file = string!(plain.file)
+        line = to_int!(plain.line)
+      }
+
+      # Bots hitting WordPress files directly, not a broken site.
+      if contains(message, "ABSPATH") { abort }
+      if trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/') { abort }
+
+      site = parse_regex!(string!(.file), r'/logs/apache2/(?P<webapp>.+?)_error\.log(?:-\d+)?$')
+      webapp = site.webapp
+      host = string(.host) ?? "unknown"
+      row, missing = get_enrichment_table_record("sites", {"webapp": webapp})
+      domain = if missing == null { string(row.domain) ?? "" } else { "" }
+      site_key = host + "/" + webapp
+      label = webapp
+      url = ""
+      if domain != "" {
+        site_key = domain
+        label = domain
+        url = "https://" + domain
+      }
+
+      time = parse_timestamp!(string!(entry.time), "%a %b %d %H:%M:%S%.f %Y")
+
+      . = {
+        "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
+        "fingerprint": md5(site_key + "|" + exception + "|" + file + "|" + to_string(line)),
+        "app": "SECRET[settings.app]",
+        "environment": "production",
+        "exception": exception,
+        "message": "[" + label + "] " + message,
+        "file": file,
+        "line": line,
+        "trace": trace,
+        "url": url,
+        "method": "-",
+        "user_id": 0,
+        "input": "{}",
+        "hostname": host,
+        "entrypoint": "http",
+        "ip": replace(string(entry.client) ?? "", r':\d+$', ""),
+        "referrer": string(entry.referer) ?? "",
+        "user_agent": ""
+      }
+
+  recent_fatals:
+    type: filter
+    inputs: [php_fatals]
+    # A first install reads whole logs; skip old fatals.
+    condition: |
+      to_unix_timestamp(parse_timestamp!(.timestamp, "%Y-%m-%d %H:%M:%S%.f", timezone: "UTC")) >= to_unix_timestamp(now()) - 86400
+
+  one_per_fingerprint:
+    type: throttle
+    inputs: [recent_fatals]
+    key_field: "{{ fingerprint }}"
+    threshold: 1
+    window_secs: 300
+
+  server_cap:
+    type: throttle
+    inputs: [one_per_fingerprint]
+    threshold: 300
+    window_secs: 60
+
+sinks:
+  log_central:
+    type: http
+    inputs: [server_cap]
+    uri: "SECRET[settings.url]/api/errors"
+    method: post
+    encoding:
+      codec: json
+    auth:
+      strategy: bearer
+      token: "SECRET[settings.token]"
+    batch:
+      max_events: 100
+      timeout_secs: 5
+    buffer:
+      type: memory
+      max_events: 1000
+      when_full: drop_newest
+    healthcheck:
+      enabled: false

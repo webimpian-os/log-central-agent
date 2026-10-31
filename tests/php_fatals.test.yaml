@@ -1,0 +1,199 @@
+tests:
+  - name: uncaught error becomes a Log Central error with a site-relative trace
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/demoshop/logs/apache2/demoshop_error.log
+          message: |-
+            [Fri Oct 23 11:20:14.109110 2026] [proxy_fcgi:error] [pid 1538:tid 1684] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Class "NinjaFirewall_log" not found in /home/demoshop/webapps/demoshop/public/wp-content/nfwlog/dropins.php:2\nStack trace:\n#0 /home/demoshop/webapps/demoshop/public/wp-content/nfwlog/dropins.php(2): nfw_dropin_block()\n#1 /home/demoshop/webapps/demoshop/public/wp-content/plugins/ninjafirewall/lib/utils.php(1728): include_once('...')\n#2 /home/demoshop/webapps/demoshop/public/wp-includes/class-wp-hook.php(341): nfw_dropins()\n#3 /home/demoshop/webapps/demoshop/public/wp-bl...', referer: https://demo-shop.test/shop/
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.timestamp, "2026-10-23 03:20:14.109")
+              assert_eq!(.app, "wordpress-sites")
+              assert_eq!(.environment, "production")
+              assert_eq!(.exception, "Error")
+              assert_eq!(.message, "[demo-shop.test] Class \"NinjaFirewall_log\" not found")
+              assert_eq!(.file, "public/wp-content/nfwlog/dropins.php")
+              assert_eq!(.line, 2)
+              assert!(starts_with(string!(.trace), "#0 public/wp-content/nfwlog/dropins.php(2): nfw_dropin_block()\n#1 public/wp-content/plugins/"))
+              assert!(ends_with(string!(.trace), "public/wp-bl..."))
+              assert!(!contains(string!(.trace), "/home/"))
+              assert_eq!(.url, "https://demo-shop.test")
+              assert_eq!(.method, "-")
+              assert_eq!(.user_id, 0)
+              assert_eq!(.input, "{}")
+              assert_eq!(.hostname, "web-01")
+              assert_eq!(.entrypoint, "http")
+              assert_eq!(.ip, "203.0.113.9")
+              assert_eq!(.referrer, "https://demo-shop.test/shop/")
+              assert_eq!(.user_agent, "")
+              assert_eq!(.fingerprint, md5("demo-shop.test|Error|public/wp-content/nfwlog/dropins.php|2"))
+
+  - name: plain fatal keeps only the first fatal on the line
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/demoshop/logs/apache2/demoshop_error.log
+          message: |-
+            [Thu Aug 13 12:09:22.678602 2026] [proxy_fcgi:error] [pid 2276408:tid 2276437] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Allowed memory size of 1073741824 bytes exhausted (tried to allocate 67108864 bytes) in /home/demoshop/webapps/demoshop/public/wp-content/plugins/woo-order-export-lite/classes/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/Cell.php on line 209; PHP message: PHP Fatal error:  Allowed memory size of 1073741824 bytes exhausted (tried to allocate 67108864 bytes) in /home/demoshop/webapps/demoshop/public/wp-includes/class-wp-fatal-error-handler.php on line 237', referer: https://demo-shop.test/wp-admin/admin.php?page=wc-order-export
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "PHP Fatal error")
+              assert_eq!(.message, "[demo-shop.test] Allowed memory size of 1073741824 bytes exhausted (tried to allocate 67108864 bytes)")
+              assert_eq!(.file, "public/wp-content/plugins/woo-order-export-lite/classes/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/Cell.php")
+              assert_eq!(.line, 209)
+              assert_eq!(.trace, "")
+              assert_eq!(.referrer, "https://demo-shop.test/wp-admin/admin.php?page=wc-order-export")
+
+  - name: fatal after other PHP messages, with escaped backslashes and a cut-off trace
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/bakery/logs/apache2/bakery_error.log
+          message: |-
+            [Tue Jul 28 12:30:01.521783 2026] [proxy_fcgi:error] [pid 1818388:tid 1818518] [client 203.0.113.9:0] AH01071: Got error 'PHP message: WordPress database error Unknown column 'key' in 'wp_ac_segments' made by require_once('wp-settings.php'), AC\\Service\\Setup->runPHP message: PHP Fatal error:  Uncaught ValueError: curl_setopt(): Argument #2 ($option) is not a valid cURL option in /home/bakery/webapps/bakery/public/wp-content/plugins/bugsnag/bugsnag-php/Notification.php:239\nStack trace:\n#0 /home/bakery/webapps/bakery/public/wp-content/plugins/bugsnag/bugsnag-php/Notification.php(239): curl_setopt()\n#1 /home/bakery/webapps/bakery/public/wp-con...'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "ValueError")
+              assert_eq!(.message, "[bakery.test] curl_setopt(): Argument #2 ($option) is not a valid cURL option")
+              assert_eq!(.file, "public/wp-content/plugins/bugsnag/bugsnag-php/Notification.php")
+              assert_eq!(.line, 239)
+              assert_eq!(.trace, "#0 public/wp-content/plugins/bugsnag/bugsnag-php/Notification.php(239): curl_setopt()\n#1 public/wp-con...")
+              assert_eq!(.referrer, "")
+              assert_eq!(.url, "https://bakery.test")
+
+  - name: trace cut off inside a home path keeps no server path
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/demoshop/logs/apache2/demoshop_error.log
+          message: |-
+            [Sat Oct 31 09:00:00.000001 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: boom in /home/demoshop/webapps/demoshop/public/wp-content/plugins/demo/demo.php:5\nStack trace:\n#0 /home/demoshop/webapps/demoshop/public/wp-includes/class-wp-hook.php(341): demo()\n#1 /home/demosh...'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.trace, "#0 public/wp-includes/class-wp-hook.php(341): demo()\n#1 ...")
+
+  - name: parse error
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/demoshop/logs/apache2/demoshop_error.log
+          message: |-
+            [Sat Oct 31 09:00:00.000001 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Parse error:  syntax error, unexpected token "}" in /home/demoshop/webapps/demoshop/public/wp-content/themes/storefront/functions.php on line 12'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.timestamp, "2026-10-31 01:00:00.000")
+              assert_eq!(.exception, "PHP Parse error")
+              assert_eq!(.message, "[demo-shop.test] syntax error, unexpected token \"}\"")
+              assert_eq!(.file, "public/wp-content/themes/storefront/functions.php")
+              assert_eq!(.line, 12)
+
+  - name: unknown site on a rotated log falls back to the webapp name and a namespaced class
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/newsite/logs/apache2/newsite_error.log-20261001
+          message: |-
+            [Sat Oct 31 09:00:00.000001 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 2001:db8::7:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Automattic\\WooCommerce\\Vendor\\Exception: boom in /home/newsite/webapps/newsite/public/wp-content/plugins/woocommerce/src/Example.php:10\nStack trace:\n#0 /home/newsite/webapps/newsite/public/wp-settings.php(593): Example->run()\n#1 {main}\n  thrown in /home/newsite/webapps/newsite/public/wp-content/plugins/woocommerce/src/Example.php on line 10'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Automattic\\WooCommerce\\Vendor\\Exception")
+              assert_eq!(.message, "[newsite] boom")
+              assert_eq!(.trace, "#0 public/wp-settings.php(593): Example->run()\n#1 {main}")
+              assert_eq!(.url, "")
+              assert_eq!(.ip, "2001:db8::7")
+              assert_eq!(.fingerprint, md5("web-01/newsite|Automattic\\WooCommerce\\Vendor\\Exception|public/wp-content/plugins/woocommerce/src/Example.php|10"))
+
+  - name: bot hitting a WordPress file directly is not reported
+    no_outputs_from: [php_fatals]
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/demoshop/logs/apache2/demoshop_error.log
+          message: |-
+            [Mon Oct 12 22:59:08.578805 2026] [proxy_fcgi:error] [pid 2649:tid 2691] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Call to undefined function add_action() in /home/demoshop/webapps/demoshop/public/wp-includes/blocks/search.php:213\nStack trace:\n#0 {main}\n  thrown in /home/demoshop/webapps/demoshop/public/wp-includes/blocks/search.php on line 213', referer: http://demo-shop.test/wp-includes/blocks/search.php
+
+  - name: fatal caused by a missing ABSPATH is not reported
+    no_outputs_from: [php_fatals]
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/demoshop/logs/apache2/demoshop_error.log
+          message: |-
+            [Sat Jul 25 08:08:14.192153 2026] [proxy_fcgi:error] [pid 2646:tid 2694] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Warning:  Use of undefined constant ABSPATH - assumed 'ABSPATH' (this will throw an Error in a future version of PHP) in /home/demoshop/webapps/demoshop/public/wp-includes/blocks/index.php on line 9PHP message: PHP Fatal error:  require(): Failed opening required 'ABSPATHWPINC/blocks/archives.php' (include_path='.:') in /home/demoshop/webapps/demoshop/public/wp-includes/blocks/index.php on line 9'
+
+  - name: warnings alone are not reported
+    no_outputs_from: [php_fatals]
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/demoshop/logs/apache2/demoshop_error.log
+          message: |-
+            [Sat Oct 31 09:00:00.000001 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Warning:  Undefined array key "id" in /home/demoshop/webapps/demoshop/public/wp-content/themes/storefront/functions.php on line 40'
+
+  - name: apache's own errors are not reported
+    no_outputs_from: [php_fatals]
+    inputs:
+      - insert_at: php_fatals
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/demoshop/logs/apache2/demoshop_error.log
+          message: |-
+            [Sat Oct 31 09:00:00.000001 2026] [core:error] [pid 1:tid 2] [client 203.0.113.9:0] AH00126: Invalid URI in request GET /%%32%65 HTTP/1.1
+
+  - name: fatals from the last day pass
+    inputs:
+      - insert_at: recent_fatals
+        type: vrl
+        source: |
+          . = {"timestamp": format_timestamp!(now(), "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC")}
+    outputs:
+      - extract_from: recent_fatals
+        conditions:
+          - type: vrl
+            source: assert!(exists(.timestamp))
+
+  - name: fatals older than a day are skipped
+    no_outputs_from: [recent_fatals]
+    inputs:
+      - insert_at: recent_fatals
+        type: vrl
+        source: |
+          . = {"timestamp": format_timestamp!(from_unix_timestamp!(to_unix_timestamp(now()) - 90000),"%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC")}
