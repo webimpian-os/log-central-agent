@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b1220"/>
@@ -16,12 +16,12 @@
     </marker>
   </defs>
 
-  <rect width="1200" height="600" rx="20" fill="url(#bg)"/>
+  <rect width="1200" height="650" rx="20" fill="url(#bg)"/>
 
   <text x="48" y="62" font-size="26" font-weight="700" fill="#f1f5f9">How it works</text>
-  <text x="48" y="88" font-size="14" fill="#94a3b8">One agent per RunCloud or Plesk server reads the web server logs and sends real PHP errors, failing sites and traffic spikes to Log Central.</text>
+  <text x="48" y="88" font-size="14" fill="#94a3b8">One agent per RunCloud or Plesk server reads the web server logs and reports PHP errors, server errors, failing sites and attacks to Log Central.</text>
 
-  <rect x="40" y="112" width="840" height="332" rx="16" fill="#0e1729" stroke="#334155" stroke-dasharray="6 6"/>
+  <rect x="40" y="112" width="840" height="382" rx="16" fill="#0e1729" stroke="#334155" stroke-dasharray="6 6"/>
   <text x="60" y="138" font-size="11" font-weight="700" letter-spacing="1.5" fill="#64748b">RUNCLOUD OR PLESK SERVER</text>
 
   <g>
@@ -67,44 +67,49 @@
   <line x1="862" y1="204" x2="926" y2="204" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
   <text x="906" y="196" font-size="10.5" font-weight="700" fill="#34d399" text-anchor="middle">HTTPS</text>
 
-  <rect x="60" y="276" width="800" height="148" rx="10" fill="#0a1222" stroke="#26344f"/>
+  <rect x="60" y="276" width="800" height="198" rx="10" fill="#0a1222" stroke="#26344f"/>
   <text x="80" y="306" font-size="12.5" fill="#94a3b8">Each problem arrives labelled with its site, with server paths removed:</text>
   <g font-size="13.5" fill="#e2e8f0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-    <text x="80" y="342"><tspan fill="#34d399">[shop.example.com]</tspan> Call to a member function get() on null</text>
-    <text x="80" y="372"><tspan fill="#34d399">[shop.example.com]</tspan> 37 of 52 requests got a server error in one minute</text>
-    <text x="80" y="402"><tspan fill="#34d399">[shop.example.com]</tspan> 4812 requests in one minute, 61% from 203.0.113.50</text>
+    <text x="80" y="342"><tspan fill="#34d399">[shop.example.com]</tspan> woocommerce plugin: Call to a member function get() on null</text>
+    <text x="80" y="370"><tspan fill="#34d399">[shop.example.com]</tspan> A request timed out on GET /checkout/</text>
+    <text x="80" y="398"><tspan fill="#34d399">[shop.example.com]</tspan> 37 of 52 requests got a server error in one minute</text>
+    <text x="80" y="426"><tspan fill="#34d399">[shop.example.com]</tspan> 4812 requests in one minute, 61% from 203.0.113.50</text>
+    <text x="80" y="454"><tspan fill="#34d399">[shop.example.com]</tspan> 240 login attempts in one minute from 203.0.113.77</text>
   </g>
   <g font-size="11" font-weight="700" text-anchor="end">
     <text x="840" y="341" fill="#fbbf24">PHP ERROR</text>
-    <text x="840" y="371" fill="#f87171">SITE FAILING</text>
-    <text x="840" y="401" fill="#a78bfa">TRAFFIC SPIKE</text>
+    <text x="840" y="369" fill="#fb923c">SERVER ERROR</text>
+    <text x="840" y="397" fill="#f87171">SITE FAILING</text>
+    <text x="840" y="425" fill="#a78bfa">TRAFFIC SPIKE</text>
+    <text x="840" y="453" fill="#f472b6">BRUTE FORCE</text>
   </g>
 
   <g>
-    <rect x="930" y="152" width="230" height="292" rx="14" fill="url(#central)" stroke="#1f6b55"/>
+    <rect x="930" y="152" width="230" height="342" rx="14" fill="url(#central)" stroke="#1f6b55"/>
     <rect x="948" y="168" width="32" height="32" rx="8" fill="#10b981" fill-opacity="0.2"/>
     <rect x="955" y="185" width="4" height="9" rx="1" fill="#34d399"/>
     <rect x="962" y="179" width="4" height="15" rx="1" fill="#34d399"/>
     <rect x="969" y="174" width="4" height="20" rx="1" fill="#34d399"/>
     <text x="992" y="190" font-size="17" font-weight="700" fill="#ecfdf5">Log Central</text>
     <text x="948" y="240" font-size="12.5" fill="#a7f3d0">Error groups for each site</text>
-    <text x="948" y="268" font-size="12.5" fill="#a7f3d0">Failing sites, traffic spikes</text>
-    <text x="948" y="296" font-size="12.5" fill="#a7f3d0">Alerts when a site breaks</text>
-    <text x="948" y="324" font-size="12.5" fill="#a7f3d0">Resolve, snooze, add notes</text>
-    <text x="948" y="410" font-size="11" fill="#6ee7b7" fill-opacity="0.75">Each problem at most once per</text>
-    <text x="948" y="425" font-size="11" fill="#6ee7b7" fill-opacity="0.75">5 minutes, in batches of 100</text>
+    <text x="948" y="268" font-size="12.5" fill="#a7f3d0">Server errors, failing sites</text>
+    <text x="948" y="296" font-size="12.5" fill="#a7f3d0">Traffic spikes, brute force</text>
+    <text x="948" y="324" font-size="12.5" fill="#a7f3d0">Alerts when a site breaks</text>
+    <text x="948" y="352" font-size="12.5" fill="#a7f3d0">Resolve, snooze, add notes</text>
+    <text x="948" y="460" font-size="11" fill="#6ee7b7" fill-opacity="0.75">Each problem at most once per</text>
+    <text x="948" y="475" font-size="11" fill="#6ee7b7" fill-opacity="0.75">5 minutes, in batches of 100</text>
   </g>
 
   <g>
-    <rect x="40" y="464" width="1120" height="104" rx="14" fill="#16213a" stroke="#26344f"/>
-    <text x="64" y="521" font-size="15" font-weight="700" fill="#e2e8f0">Safe for the server</text>
+    <rect x="40" y="514" width="1120" height="104" rx="14" fill="#16213a" stroke="#26344f"/>
+    <text x="64" y="571" font-size="15" font-weight="700" fill="#e2e8f0">Safe for the server</text>
     <g font-size="12.5" fill="#cbd5e1">
-      <text x="290" y="503"><tspan fill="#34d399" font-weight="700">✓</tspan>  ½ CPU core, lowest priority</text>
-      <text x="290" y="539"><tspan fill="#34d399" font-weight="700">✓</tspan>  256 MB memory cap</text>
-      <text x="580" y="503"><tspan fill="#34d399" font-weight="700">✓</tspan>  Writes only a few KB</text>
-      <text x="580" y="539"><tspan fill="#34d399" font-weight="700">✓</tspan>  Restarts itself after crashes</text>
-      <text x="870" y="503"><tspan fill="#34d399" font-weight="700">✓</tspan>  Nothing lost if Log Central is down</text>
-      <text x="870" y="539"><tspan fill="#34d399" font-weight="700">✓</tspan>  Token hidden from the sites</text>
+      <text x="290" y="553"><tspan fill="#34d399" font-weight="700">✓</tspan>  ½ CPU core, lowest priority</text>
+      <text x="290" y="589"><tspan fill="#34d399" font-weight="700">✓</tspan>  256 MB memory cap</text>
+      <text x="580" y="553"><tspan fill="#34d399" font-weight="700">✓</tspan>  Writes only a few KB</text>
+      <text x="580" y="589"><tspan fill="#34d399" font-weight="700">✓</tspan>  Restarts itself after crashes</text>
+      <text x="870" y="553"><tspan fill="#34d399" font-weight="700">✓</tspan>  Nothing lost if Log Central is down</text>
+      <text x="870" y="589"><tspan fill="#34d399" font-weight="700">✓</tspan>  Token hidden from the sites</text>
     </g>
   </g>
 </svg>
