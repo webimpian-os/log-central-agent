@@ -124,12 +124,12 @@ Traffic, on a Plesk layout with 50 sites, 1% of requests ending in a PHP fatal e
 
 | Scenario | Load | Avg CPU | Peak memory | Result |
 |---|---|---|---|---|
-| Normal traffic | 1,000 requests a second for 2 minutes | 17% | 50 MB | Kept up live |
-| DDoS on one site | 8,000 requests a second from random addresses, paths and user agents, for 2 minutes | 47% | 76 MB | Reported the spike, caught up 26 s after the attack stopped |
-| Server-wide flood, 100 sites | 20,000 requests a second for 1 minute | 49% (the cap) | 92 MB | Reported the spike on all 100 sites. Fell behind and caught up 2 minutes after the flood stopped |
+| Normal traffic | 1,000 requests a second for 2 minutes | 16% | 55 MB | Kept up live |
+| DDoS on one site | 8,000 requests a second from random addresses, paths and user agents, for 2 minutes | 48% | 81 MB | Reported the spike, caught up 24 s after the attack stopped |
+| Server-wide flood, 100 sites | 20,000 requests a second for 1 minute | 49% (the cap) | 105 MB | Reported the spike on all 100 sites. Fell behind and caught up 2 minutes after the flood stopped |
 | Log Central down for 6 minutes | 2,000 requests a second | 6% | 73 MB | Paused reading, then sent the 175 errors that were waiting. No false spikes from the backlog |
 
-In total it read 2.4 million requests (277 MB of logs) with a memory peak of 92 MB, no out-of-memory kills and no crashes.
+In total it read 2.3 million requests (264 MB of logs) with a memory peak of 105 MB, no out-of-memory kills and no crashes.
 
 For scale, the busiest real site on our two test servers peaked at 666 requests a minute, about 11 a second.
 
