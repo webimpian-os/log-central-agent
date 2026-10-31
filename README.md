@@ -16,11 +16,15 @@
   <img src="https://img.shields.io/badge/limits-%C2%BD%20CPU%20%C2%B7%20256%20MB-34d399?style=flat-square" alt="Limits: half a CPU core and 256 MB">
 </p>
 
-It reports five kinds of problems:
+Problems that need a fix go to Log Central's **Errors** page, which alerts:
 
-- **PHP errors:** a WordPress "critical error" page becomes an error you can see, named after the plugin or theme behind it.
-- **Server errors:** PHP not responding, requests timing out, PHP crashing mid-request, or nginx running out of connections.
+- **PHP errors:** a WordPress "critical error" page becomes an error you can see, named after the plugin, theme or Code Snippets snippet behind it.
 - **Failing sites:** at least half of a site's requests in a minute, and at least 5, getting a server error (5xx), like a broken page or a database that's down.
+- **Traffic spikes that break a site:** a spike where 1 in 10 requests or more fails.
+
+Everything else worth knowing goes to the **Logs** page, which never alerts:
+
+- **Server errors:** PHP not responding, requests timing out, PHP crashing mid-request, or nginx running out of connections.
 - **Traffic spikes:** a site getting 3,000 or more requests in a minute, or ten times its usual traffic, with the top addresses, paths and user agents, so you can tell an attack from a busy day.
 - **Brute force:** one address trying to log in 60 or more times a minute on `wp-login.php` or `xmlrpc.php`.
 
@@ -36,15 +40,22 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 
 ## What it detects
 
-**✅ Reported**
+**🚨 Errors page** (alerts)
 
-| Problem | Shows up in Log Central as |
+| Problem | Shows up as |
 |---|---|
-| A PHP fatal or parse error | One group per site and code location, titled with the plugin or theme behind it, with the request and stack trace |
-| PHP not responding, a request timing out, PHP crashing mid-request, nginx out of connections | "PHP not responding", "Request timed out", "PHP crashed mid-request" or "nginx overloaded", one group per site |
-| Most of a site's requests failing (500, 502, 503 or 504) | "Site failing", with the paths that failed |
-| A flood or DDoS: 3,000+ requests a minute, or 10× a site's usual traffic | "Traffic spike", with the top IPs, paths, user agents and status codes |
-| 60+ login attempts a minute from one address | "Brute force", naming the address |
+| A PHP fatal or parse error | One group per site and code location, titled with the plugin, theme or snippet that caused it, with the request and stack trace |
+| A PHP function switched off in the site's PHP settings, like `ignore_user_abort()` | "Disabled PHP function" |
+| Most of a site's requests failing (500, 502, 503 or 504) | "Site failing", with the path that failed most |
+| A traffic spike where 1 in 10 requests or more fails | "Traffic spike", with the top IPs, paths, user agents and status codes |
+
+**📋 Logs page** (no alerts)
+
+| Problem | Channel |
+|---|---|
+| PHP not responding, a request timing out, PHP crashing mid-request, nginx out of connections | `server`, at most 5 per site and kind every 5 minutes |
+| A flood or DDoS the site handles: 3,000+ requests a minute, or 10× its usual traffic | `traffic`, with the top IPs, paths, user agents and status codes |
+| 60+ login attempts a minute from one address | `security`, naming the address |
 
 **🔇 Ignored on purpose**
 
@@ -58,7 +69,7 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 
 | Problem | Instead |
 |---|---|
-| Slow pages | Not yet: needs request times in the web server logs |
+| Slow pages and API response times | Not yet: needs request times in the web server logs |
 | Server CPU, memory or disk | A server monitor such as Beszel |
 | Blocking an attack | Cloudflare, Imunify360 or the panel's firewall. The agent only detects |
 
@@ -93,7 +104,7 @@ Servers don't update automatically. A new release only reaches a server when you
 To install a specific version instead, use its tag:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/v1.1.0/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/v1.2.0/install.sh | sudo bash
 ```
 
 To update many servers from a checkout of the new tag, one at a time:
@@ -103,6 +114,19 @@ scripts/rollout.sh staging-server web-01 web-02
 ```
 
 Update a staging server first, then one client server, then the rest.
+
+## Full stack traces
+
+PHP-FPM cuts every error message at 1,024 characters, so a WordPress stack trace usually stops after about five lines. To raise that to 8,192, the most Apache keeps per line, run as root:
+
+```
+curl -fsSL https://github.com/webimpian-os/log-central-agent/releases/latest/download/php-log-limit.sh | sudo bash
+```
+
+- It adds one small file per PHP version and changes nothing the panel manages.
+- It tests each config before reloading PHP-FPM. A reload can end requests in progress, so run it at a quiet hour.
+- PHP 7.2 and older keep their fixed limit.
+- To remove it, run the same command with `sudo bash -s -- --undo`.
 
 ## Server safety
 
@@ -166,4 +190,4 @@ VECTOR=/path/to/vector scripts/test.sh     # run the tests
 scripts/rollout.sh --url URL --app SLUG web-01 web-02   # install this checkout over SSH (token from LOG_CENTRAL_TOKEN)
 ```
 
-To release: bump `AGENT_VERSION` in `install.sh`, commit, tag the commit with the same version (e.g. `v1.1.1`), push the tag and publish a GitHub release for it. Publishing attaches `install.sh` and `uninstall.sh`, so the latest download links move to the new version. Then update the servers as above.
+To release: bump `AGENT_VERSION` in `install.sh`, commit, tag the commit with the same version (e.g. `v1.1.1`), push the tag and publish a GitHub release for it. Publishing attaches `install.sh`, `uninstall.sh` and `php-log-limit.sh`, so the latest download links move to the new version. Then update the servers as above.

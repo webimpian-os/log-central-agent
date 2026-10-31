@@ -91,10 +91,10 @@
     <rect x="962" y="179" width="4" height="15" rx="1" fill="#34d399"/>
     <rect x="969" y="174" width="4" height="20" rx="1" fill="#34d399"/>
     <text x="992" y="190" font-size="17" font-weight="700" fill="#ecfdf5">Log Central</text>
-    <text x="948" y="240" font-size="12.5" fill="#a7f3d0">Error groups for each site</text>
-    <text x="948" y="268" font-size="12.5" fill="#a7f3d0">Server errors, failing sites</text>
-    <text x="948" y="296" font-size="12.5" fill="#a7f3d0">Traffic spikes, brute force</text>
-    <text x="948" y="324" font-size="12.5" fill="#a7f3d0">Alerts when a site breaks</text>
+    <text x="948" y="240" font-size="12.5" fill="#a7f3d0">Errors: PHP, failing sites</text>
+    <text x="948" y="268" font-size="12.5" fill="#a7f3d0">Logs: server errors, attacks</text>
+    <text x="948" y="296" font-size="12.5" fill="#a7f3d0">Error groups for each site</text>
+    <text x="948" y="324" font-size="12.5" fill="#a7f3d0">Alerts only when a site breaks</text>
     <text x="948" y="352" font-size="12.5" fill="#a7f3d0">Resolve, snooze, add notes</text>
     <text x="948" y="460" font-size="11" fill="#6ee7b7" fill-opacity="0.75">Each problem at most once per</text>
     <text x="948" y="475" font-size="11" fill="#6ee7b7" fill-opacity="0.75">5 minutes, in batches of 100</text>
