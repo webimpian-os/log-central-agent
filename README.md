@@ -32,6 +32,22 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 
 ![Of 167,832 PHP messages, 2,036 were fatal errors, 1,055 were real errors once bots were dropped, and they formed 40 error groups](docs/php-errors.svg)
 
+## What it detects
+
+| Problem | Detected | How it shows up |
+|---|---|---|
+| PHP fatal or parse error, logged by Apache or nginx | ✅ Yes | One error group per site and code location, with the request and the stack trace. The plugin or theme is in the file path |
+| PHP warnings, notices and deprecations | ➖ No, on purpose | Too noisy, and they don't break the page |
+| Bots opening WordPress files directly | ➖ No, on purpose | Ignored: the site isn't broken |
+| A site where most requests fail (500, 502, 503 or 504) | ✅ Yes | "Site failing", with the paths that failed |
+| A single server error now and then | ➖ No, on purpose | Mostly bots probing paths that don't exist |
+| nginx's own errors, like "upstream timed out" or PHP-FPM refusing connections | ⏳ Not yet | Their effect shows up as "Site failing" |
+| A flood or DDoS on a site (3,000+ requests a minute) | ✅ Yes | "Traffic spike", with the top IPs, paths, user agents and status codes |
+| A slow brute-force attack (say 200 logins a minute) | ⏳ Not yet | Below the traffic spike threshold |
+| Slow pages | ⏳ Not yet | Needs request times in the web server logs |
+| Server CPU, memory or disk | ➖ No | Use a server monitor such as Beszel |
+| Blocking an attack | ➖ No | Detection only. Blocking stays with Cloudflare, Imunify360 or the panel's firewall |
+
 ## Install
 
 As root on a RunCloud or Plesk server:
