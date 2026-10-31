@@ -1,0 +1,27 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vector
+        # Keep in sync with install.sh.
+        run: |
+          archive=vector-0.61.0-x86_64-unknown-linux-musl.tar.gz
+          curl -fsSL -o "$archive" "https://github.com/vectordotdev/vector/releases/download/v0.61.0/$archive"
+          echo "e1609b8a55ef1c1fc4fd88633e2bc6366e9a4022f6f1ae846cadd27af5237621  $archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/vector"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/vector"
+          echo "VECTOR=$(find "$RUNNER_TEMP/vector" -type f -name vector -path '*/bin/*' | head -n 1)" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: scripts/test.sh
