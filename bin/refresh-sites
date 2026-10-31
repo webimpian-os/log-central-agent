@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+conf_dir="${RLC_APACHE_CONF_DIR:-/etc/apache2-rc/conf.d}"
+table="${RLC_SITES_TABLE:-/var/lib/runcloud-log-central/sites.csv}"
+service="runcloud-log-central.service"
+
+# ServerName is RunCloud's webapp name, not a domain.
+primary_domain() {
+    awk '
+        tolower($1) == "serveralias" { for (i = 2; i <= NF; i++) aliases[count++] = $i }
+        END {
+            for (i = 0; i < count; i++) if (aliases[i] !~ /^(www\.|\*\.)/) { print aliases[i]; exit }
+            if (count > 0) print aliases[0]
+        }
+    ' "$1"
+}
+
+build_table() {
+    echo "webapp,domain"
+    for conf in "$conf_dir"/*.conf; do
+        [ -e "$conf" ] || continue
+        webapp="$(basename "$conf" .conf)"
+        domain="$(primary_domain "$conf")"
+        [[ "$webapp" =~ ^[A-Za-z0-9._-]+$ ]] || continue
+        [[ "$domain" =~ ^[A-Za-z0-9.*_-]+$ ]] || domain=""
+        echo "$webapp,$domain"
+    done
+}
+
+tmp="$(mktemp "$table.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+build_table > "$tmp"
+
+if [ -f "$table" ] && cmp -s "$tmp" "$table"; then
+    exit 0
+fi
+
+chmod 0644 "$tmp"
+mv "$tmp" "$table"
+trap - EXIT
+
+if [ "${1:-}" = "--reload" ] && systemctl is-active --quiet "$service"; then
+    systemctl reload "$service"
+fi
