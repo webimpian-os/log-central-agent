@@ -1,0 +1,220 @@
+tests:
+  - name: RunCloud request behind Cloudflare counts the visitor's address
+    inputs:
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/demoshop/logs/nginx/demoshop_access.log",
+            "message": "104.23.160.48 - - [" + format_timestamp!(now(), "%d/%b/%Y:%H:%M:%S %z") + "] \"GET /shop/?page=2 HTTP/2.0\" 502 0 \"-\" \"Mozilla/5.0\" \"198.51.100.1, 203.0.113.9\" \"https://www.demo-shop.test\""
+          }
+    outputs:
+      - extract_from: requests
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.site_key, "web-01/demoshop")
+              assert_eq!(.label, "demo-shop.test")
+              assert_eq!(.url, "https://demo-shop.test")
+              assert_eq!(.host, "web-01")
+              assert_eq!(.status, 502)
+              assert_eq!(.ip, "203.0.113.9")
+              assert_eq!(.path, "/shop/")
+              assert_eq!(.agent, "Mozilla/5.0")
+
+  - name: Plesk request takes the domain from the log folder
+    inputs:
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_access_ssl_log",
+            "message": "203.0.113.9 - - [" + format_timestamp!(now(), "%d/%b/%Y:%H:%M:%S %z") + "] \"POST /wp-login.php HTTP/1.1\" 200 4410 \"https://shop.test/\" \"curl/8.5\""
+          }
+    outputs:
+      - extract_from: requests
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.site_key, "web-02/shop.test")
+              assert_eq!(.label, "shop.test")
+              assert_eq!(.url, "https://shop.test")
+              assert_eq!(.status, 200)
+              assert_eq!(.ip, "203.0.113.9")
+              assert_eq!(.path, "/wp-login.php")
+
+  - name: native NGINX site on RunCloud takes the domain from the request
+    inputs:
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/newsite/logs/nginx/newsite_access.log",
+            "message": "203.0.113.9 - - [" + format_timestamp!(now(), "%d/%b/%Y:%H:%M:%S %z") + "] \"GET / HTTP/1.1\" 200 512 \"-\" \"curl/8.5\" \"-\" \"https://new-site.test\""
+          }
+    outputs:
+      - extract_from: requests
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.site_key, "web-01/newsite")
+              assert_eq!(.label, "new-site.test")
+              assert_eq!(.ip, "203.0.113.9")
+
+  - name: malformed requests still count as traffic
+    inputs:
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_access_log",
+            "message": "203.0.113.9 - - [" + format_timestamp!(now(), "%d/%b/%Y:%H:%M:%S %z") + "] \"\\x16\\x03\\x01\\x02\" 400 157 \"-\" \"-\""
+          }
+    outputs:
+      - extract_from: requests
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.status, 400)
+              assert_eq!(.path, "")
+
+  - name: requests older than two minutes are not counted
+    no_outputs_from: [requests]
+    inputs:
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_access_log",
+            "message": "203.0.113.9 - - [" + format_timestamp!(from_unix_timestamp!(to_unix_timestamp(now()) - 180), "%d/%b/%Y:%H:%M:%S %z") + "] \"GET / HTTP/1.1\" 200 512 \"-\" \"curl/8.5\""
+          }
+
+  - name: a traffic spike names the top address
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 3200
+          server_errors: 0
+          statuses.200: 3200
+          top_ips[0].ip: 203.0.113.50
+          top_ips[0].requests: 2000
+          top_paths[0].path: /wp-login.php
+          top_paths[0].requests: 3100
+          top_user_agents[0].user_agent: python-requests/2.31
+          top_user_agents[0].requests: 2000
+    outputs:
+      - extract_from: traffic_alerts
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Traffic spike")
+              assert_eq!(.message, "[shop.test] 3200 requests in one minute, 62% from 203.0.113.50")
+              assert_eq!(.fingerprint, md5("web-02/shop.test|Traffic spike"))
+              assert_eq!(.app, "wordpress-sites")
+              assert_eq!(.url, "https://shop.test")
+              assert_eq!(.ip, "203.0.113.50")
+              assert_eq!(.user_agent, "python-requests/2.31")
+              assert_eq!(.hostname, "web-02")
+              assert_eq!(.line, 0)
+              input = parse_json!(.input)
+              assert_eq!(input.requests, 3200)
+              assert_eq!(input.top_paths[0].path, "/wp-login.php")
+
+  - name: a spike that breaks the site says how many requests failed
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 5000
+          server_errors: 4100
+          top_ips[0].ip: 203.0.113.50
+          top_ips[0].requests: 500
+    outputs:
+      - extract_from: traffic_alerts
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Traffic spike")
+              assert_eq!(.message, "[shop.test] 5000 requests in one minute, 10% from 203.0.113.50, 4100 server errors")
+
+  - name: a spike spread over many addresses doesn't name one
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-02/shop.test
+          label: shop.test
+          url: https://shop.test
+          host: web-02
+          requests: 200000
+          server_errors: 0
+          top_ips[0].ip: 198.51.100.7
+          top_ips[0].requests: 3
+    outputs:
+      - extract_from: traffic_alerts
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[shop.test] 200000 requests in one minute from many addresses")
+
+  - name: a site where most requests fail is reported
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-01/bakery
+          label: bakery.test
+          url: https://bakery.test
+          host: web-01
+          requests: 10
+          server_errors: 8
+          top_error_paths[0].path: /
+          top_error_paths[0].requests: 8
+    outputs:
+      - extract_from: traffic_alerts
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.exception, "Site failing")
+              assert_eq!(.message, "[bakery.test] 8 of 10 requests got a server error in one minute")
+              assert_eq!(.fingerprint, md5("web-01/bakery|Site failing"))
+
+  - name: scattered server errors are not reported
+    no_outputs_from: [traffic_alerts]
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-01/bakery
+          label: bakery.test
+          url: https://bakery.test
+          host: web-01
+          requests: 200
+          server_errors: 20
+
+  - name: a few failures on a quiet site are not reported
+    no_outputs_from: [traffic_alerts]
+    inputs:
+      - insert_at: traffic_alerts
+        type: log
+        log_fields:
+          site_key: web-01/bakery
+          label: bakery.test
+          url: https://bakery.test
+          host: web-01
+          requests: 4
+          server_errors: 4

@@ -151,6 +151,200 @@ transforms:
     condition: |
       to_unix_timestamp(parse_timestamp!(.timestamp, "%Y-%m-%d %H:%M:%S%.f", timezone: "UTC")) >= to_unix_timestamp(now()) - 86400
 
+  requests:
+    type: remap
+    inputs: [access_logs]
+    drop_on_abort: true
+    drop_on_error: true
+    source: |
+      entry = parse_regex(string!(.message), r'^(?P<client>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?:(?P<method>[A-Z]+) (?P<path>[^ "?]*))?[^"]*" (?P<status>\d{3}) \S+ "[^"]*" "(?P<agent>[^"]*)"(?: "(?P<forwarded>[^"]*)" "(?P<origin>[^"]*)")?') ?? null
+      if entry == null { abort }
+      # A backlog counted as live traffic would look like a spike.
+      if to_unix_timestamp(parse_timestamp!(string!(entry.time), "%d/%b/%Y:%H:%M:%S %z")) < to_unix_timestamp(now()) - 120 { abort }
+
+      ip = string!(entry.client)
+      forwarded = string(entry.forwarded) ?? "-"
+      if forwarded != "-" && forwarded != "" {
+        # Behind Cloudflare the last forwarded address is the visitor.
+        addresses = split(forwarded, ",")
+        ip = strip_whitespace(string!(addresses[-1]))
+      }
+
+      host = string(.host) ?? "unknown"
+      log_path = string(.file) ?? ""
+      name = "unknown"
+      domain = ""
+      plesk = parse_regex(log_path, r'^/var/www/vhosts/system/(?P<domain>[^/]+)/logs/') ?? null
+      runcloud = parse_regex(log_path, r'/logs/nginx/(?P<webapp>.+?)_access\.log$') ?? null
+      if plesk != null {
+        domain = string!(plesk.domain)
+        name = domain
+      } else if runcloud != null {
+        name = string!(runcloud.webapp)
+        row, missing = get_enrichment_table_record("sites", {"webapp": name})
+        if missing == null { domain = string(row.domain) ?? "" }
+      }
+      if domain == "" {
+        found = parse_regex(string(entry.origin) ?? "", r'^https?://(?P<v>[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)$') ?? {}
+        domain = string(found.v) ?? ""
+      }
+      label = name
+      url = ""
+      if domain != "" {
+        label = domain
+        url = "https://" + domain
+      }
+
+      . = {
+        "site_key": host + "/" + name,
+        "label": label,
+        "url": url,
+        "host": host,
+        "status": to_int!(entry.status),
+        "ip": ip,
+        "path": truncate(string(entry.path) ?? "", 200),
+        "agent": truncate(string!(entry.agent), 200)
+      }
+
+  traffic:
+    type: lua
+    version: "2"
+    inputs: [requests]
+    source: |
+      -- Caps memory when a flood brings endless new IPs, paths or user agents.
+      MAX_KEYS = 500
+
+      function init()
+        sites = {}
+      end
+
+      local function counter()
+        return { counts = {}, size = 0 }
+      end
+
+      local function tally(map, key)
+        local count = map.counts[key]
+        if count then
+          map.counts[key] = count + 1
+        elseif map.size < MAX_KEYS then
+          map.counts[key] = 1
+          map.size = map.size + 1
+        end
+      end
+
+      local function top(map, field, limit)
+        local rows = {}
+        for value, requests in pairs(map.counts) do
+          rows[#rows + 1] = { [field] = value, requests = requests }
+        end
+        table.sort(rows, function(a, b) return a.requests > b.requests end)
+        local result = {}
+        for i = 1, math.min(limit, #rows) do
+          result[i] = rows[i]
+        end
+        return result
+      end
+
+      function process(event, emit)
+        local log = event.log
+        local site = sites[log.site_key]
+        if not site then
+          site = {
+            label = log.label, url = log.url, host = log.host,
+            requests = 0, server_errors = 0, statuses = {},
+            ips = counter(), paths = counter(), error_paths = counter(), agents = counter(),
+          }
+          sites[log.site_key] = site
+        end
+        local status = tostring(log.status)
+        site.requests = site.requests + 1
+        site.statuses[status] = (site.statuses[status] or 0) + 1
+        tally(site.ips, log.ip)
+        tally(site.paths, log.path)
+        tally(site.agents, log.agent)
+        if log.status >= 500 then
+          site.server_errors = site.server_errors + 1
+          tally(site.error_paths, log.path)
+        end
+      end
+
+      function flush(emit)
+        for key, site in pairs(sites) do
+          emit({ log = {
+            site_key = key, label = site.label, url = site.url, host = site.host,
+            requests = site.requests, server_errors = site.server_errors, statuses = site.statuses,
+            top_ips = top(site.ips, "ip", 5),
+            top_paths = top(site.paths, "path", 5),
+            top_error_paths = top(site.error_paths, "path", 5),
+            top_user_agents = top(site.agents, "user_agent", 3),
+          } })
+        end
+        sites = {}
+      end
+    hooks:
+      init: init
+      process: process
+      shutdown: flush
+    timers:
+      - interval_seconds: 60
+        handler: flush
+
+  traffic_alerts:
+    type: remap
+    inputs: [traffic]
+    drop_on_abort: true
+    drop_on_error: true
+    source: |
+      requests = to_int!(.requests)
+      errors = to_int!(.server_errors)
+      spike = requests >= 3000
+      failing = errors >= 5 && errors * 2 >= requests
+      if !spike && !failing { abort }
+
+      top_ip = string(.top_ips[0].ip) ?? ""
+      exception = "Site failing"
+      message = to_string(errors) + " of " + to_string(requests) + " requests got a server error in one minute"
+      if spike {
+        exception = "Traffic spike"
+        message = to_string(requests) + " requests in one minute"
+        share = to_int(floor((to_int(.top_ips[0].requests) ?? 0) * 100 / requests ?? 0))
+        if share >= 10 {
+          message = message + ", " + to_string(share) + "% from " + top_ip
+        } else {
+          message = message + " from many addresses"
+        }
+        if errors > 0 { message = message + ", " + to_string(errors) + " server errors" }
+      }
+
+      . = {
+        "timestamp": format_timestamp!(now(), "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
+        "fingerprint": md5(string!(.site_key) + "|" + exception),
+        "app": "SECRET[settings.app]",
+        "environment": "production",
+        "exception": exception,
+        "message": "[" + string!(.label) + "] " + message,
+        "file": "",
+        "line": 0,
+        "trace": "",
+        "url": string!(.url),
+        "method": "-",
+        "user_id": 0,
+        "input": encode_json({
+          "requests": requests,
+          "server_errors": errors,
+          "statuses": .statuses,
+          "top_ips": .top_ips,
+          "top_paths": .top_paths,
+          "top_error_paths": .top_error_paths,
+          "top_user_agents": .top_user_agents
+        }),
+        "hostname": string!(.host),
+        "entrypoint": "http",
+        "ip": top_ip,
+        "referrer": "",
+        "user_agent": string(.top_user_agents[0].user_agent) ?? ""
+      }
+
   one_per_fingerprint:
     type: throttle
     inputs: [recent_fatals]
@@ -164,10 +358,18 @@ transforms:
     threshold: 300
     window_secs: 60
 
+  # Kept out of server_cap so a flood of PHP errors can't hide a traffic spike.
+  one_alert_per_site:
+    type: throttle
+    inputs: [traffic_alerts]
+    key_field: "{{ fingerprint }}"
+    threshold: 1
+    window_secs: 300
+
 sinks:
   log_central:
     type: http
-    inputs: [server_cap]
+    inputs: [server_cap, one_alert_per_site]
     uri: "SECRET[settings.url]/api/errors"
     method: post
     encoding:

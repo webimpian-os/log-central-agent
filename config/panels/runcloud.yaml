@@ -30,3 +30,11 @@ sources:
       condition_pattern: '^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \['
       mode: halt_before
       timeout_ms: 1000
+
+  access_logs:
+    type: file
+    include:
+      - /home/*/logs/nginx/*_access.log
+    read_from: end
+    rotate_wait_secs: 300
+    max_line_bytes: 65536
