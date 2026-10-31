@@ -30,7 +30,8 @@ if [ "$before" != "$after" ]; then
     exit 1
 fi
 
-if ls "$work" | grep -q 'sites.csv\.'; then
+leftovers=("$work"/sites.csv.*)
+if [ -e "${leftovers[0]}" ]; then
     echo "refresh-sites: left a temp file behind" >&2
     exit 1
 fi

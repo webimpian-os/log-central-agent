@@ -158,7 +158,7 @@ preflight() {
     [ "$available_mb" -ge 512 ] || fail "only ${available_mb} MB of memory available, need at least 512 MB"
     cpus="$(nproc)"
     load="$(cut -d ' ' -f 1 /proc/loadavg)"
-    awk -v load="$load" -v cpus="$cpus" 'BEGIN { exit !(load < cpus) }' \
+    awk -v current="$load" -v cpus="$cpus" 'BEGIN { exit !(current < cpus) }' \
         || fail "the server is busy (load $load on $cpus CPUs), try again later"
 }
 

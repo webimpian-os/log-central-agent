@@ -32,7 +32,7 @@ tmp="$(mktemp "$table.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 build_table > "$tmp"
 
-if [ -f "$table" ] && cmp -s "$tmp" "$table"; then
+if [ -f "$table" ] && [ "$(< "$tmp")" = "$(< "$table")" ]; then
     exit 0
 fi
 

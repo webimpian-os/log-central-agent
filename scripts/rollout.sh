@@ -32,6 +32,7 @@ for host in "${hosts[@]}"; do
     echo "==> $host"
     remote_dir="$(COPYFILE_DISABLE=1 tar -C "$root" --no-xattrs -cz install.sh config bin systemd \
         | ssh "$host" 'dir="$(mktemp -d)" && tar -xz -C "$dir" && echo "$dir"')"
+    # shellcheck disable=SC2029  # remote_dir and args are meant to expand here.
     printf '%s\n' "${LOG_CENTRAL_TOKEN:-}" \
         | ssh "$host" "bash $remote_dir/install.sh$args; status=\$?; rm -rf $remote_dir; exit \$status"
 done
