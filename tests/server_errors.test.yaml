@@ -14,15 +14,17 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "Request timed out")
+              assert_eq!(parse_json!(.context).kind, "Request timed out")
               assert_eq!(.message, "[shop.test] A request timed out on GET /checkout/")
-              assert_eq!(.url, "https://shop.test/checkout/")
-              assert_eq!(.method, "GET")
-              assert_eq!(.ip, "203.0.113.9")
-              assert_eq!(.referrer, "https://shop.test/cart/")
-              assert_eq!(.trace, "upstream timed out (110: Connection timed out) while reading response header from upstream")
-              assert_eq!(.fingerprint, md5("shop.test|Request timed out"))
+              assert_eq!(parse_json!(.context).url, "https://shop.test/checkout/")
+              assert_eq!(parse_json!(.context).method, "GET")
+              assert_eq!(parse_json!(.context).ip, "203.0.113.9")
+              assert_eq!(parse_json!(.context).referrer, "https://shop.test/cart/")
+              assert_eq!(parse_json!(.context).detail, "upstream timed out (110: Connection timed out) while reading response header from upstream")
+              assert_eq!(.throttle_key, md5("shop.test|Request timed out"))
               assert_eq!(.app, "wordpress-sites")
+              assert_eq!(.channel, "server")
+              assert_eq!(.level, "warning")
               assert_eq!(.hostname, "web-02")
 
   - name: PHP refusing connections on a native NGINX site hides the socket path
@@ -40,10 +42,10 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "PHP not responding")
+              assert_eq!(parse_json!(.context).kind, "PHP not responding")
               assert_eq!(.message, "[new-site.test] PHP is not responding on GET /")
-              assert_eq!(.trace, "connect() to unix socket failed (111: Connection refused) while connecting to upstream")
-              assert!(!contains(string!(.trace), "/var/run"))
+              assert_eq!(parse_json!(.context).detail, "connect() to unix socket failed (111: Connection refused) while connecting to upstream")
+              assert!(!contains(string!(parse_json!(.context).detail), "/var/run"))
 
   - name: nginx unable to reach Apache on Plesk is PHP not responding
     inputs:
@@ -60,7 +62,7 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "PHP not responding")
+              assert_eq!(parse_json!(.context).kind, "PHP not responding")
               assert_eq!(.message, "[shop.test] PHP is not responding on GET /shop/")
 
   - name: nginx out of connections
@@ -78,7 +80,7 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "nginx overloaded")
+              assert_eq!(parse_json!(.context).kind, "nginx overloaded")
               assert_eq!(.message, "[shop.test] nginx ran out of connections on GET /")
 
   - name: PHP closing the connection before answering
@@ -96,7 +98,7 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "PHP crashed mid-request")
+              assert_eq!(parse_json!(.context).kind, "PHP crashed mid-request")
               assert_eq!(.message, "[shop.test] PHP stopped in the middle of a request on POST /wp-admin/admin-ajax.php")
 
   - name: Apache timeout on RunCloud
@@ -114,12 +116,12 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "Request timed out")
+              assert_eq!(parse_json!(.context).kind, "Request timed out")
               assert_eq!(.message, "[demo-shop.test] A request timed out")
-              assert_eq!(.url, "https://demo-shop.test")
-              assert_eq!(.ip, "203.0.113.9")
-              assert_eq!(.referrer, "https://demo-shop.test/shop/")
-              assert_eq!(.trace, "The timeout specified has expired: Error dispatching request to : (polling)")
+              assert_eq!(parse_json!(.context).url, "https://demo-shop.test")
+              assert_eq!(parse_json!(.context).ip, "203.0.113.9")
+              assert_eq!(parse_json!(.context).referrer, "https://demo-shop.test/shop/")
+              assert_eq!(parse_json!(.context).detail, "The timeout specified has expired: Error dispatching request to : (polling)")
 
   - name: Apache losing PHP mid-request
     inputs:
@@ -136,7 +138,7 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "PHP crashed mid-request")
+              assert_eq!(parse_json!(.context).kind, "PHP crashed mid-request")
               assert_eq!(.message, "[demo-shop.test] PHP stopped in the middle of a request")
 
   - name: Apache unable to connect to PHP
@@ -154,8 +156,8 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.exception, "PHP not responding")
-              assert_eq!(.fingerprint, md5("demo-shop.test|PHP not responding"))
+              assert_eq!(parse_json!(.context).kind, "PHP not responding")
+              assert_eq!(.throttle_key, md5("demo-shop.test|PHP not responding"))
 
   - name: a PHP warning about another service timing out is not a server error
     no_outputs_from: [server_errors, php_fatals]
@@ -216,3 +218,33 @@ tests:
             "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
             "message": format_timestamp!(from_unix_timestamp!(to_unix_timestamp(now()) - 172800), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: \"GET / HTTP/1.1\", host: \"shop.test\""
           }
+
+  - name: bots opening WordPress files directly are not server errors
+    no_outputs_from: [server_errors]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/acme/logs/nginx/acmeshop_error.log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 upstream prematurely closed connection while reading response header from upstream, client: 203.0.113.20, server: acme-shop.test, request: \"GET /wp-content/themes/demo-child/functions.php HTTP/1.1\", upstream: \"http://127.0.0.1:8080/wp-content/themes/demo-child/functions.php\", host: \"acme-shop.test\""
+          }
+
+  - name: a crash on a real page is still reported
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/acme/logs/nginx/acmeblog_error.log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [error] 12#0: *34 upstream prematurely closed connection while reading response header from upstream, client: 203.0.113.21, server: acme-blog.test, request: \"GET /checkout/thank-you/ HTTP/1.1\", host: \"acme-blog.test\""
+          }
+    outputs:
+      - extract_from: server_errors
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(parse_json!(.context).kind, "PHP crashed mid-request")
+              assert_eq!(.message, "[acme-blog.test] PHP stopped in the middle of a request on GET /checkout/thank-you/")

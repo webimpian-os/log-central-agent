@@ -231,6 +231,8 @@ transforms:
         detail = replace(text, r'unix:\S+', "unix socket")
       }
       if exception == "" { abort }
+      # Bots opening WordPress files directly, not a broken site.
+      if match(path, r'(?:^|/)wp-(?:content|includes|admin/includes)/.*\.php$') { abort }
       # A first install reads whole logs; skip old errors.
       if to_unix_timestamp(time) < to_unix_timestamp(now()) - 86400 { abort }
 
@@ -249,23 +251,21 @@ transforms:
 
       . = {
         "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
-        "fingerprint": md5(string!(.site_key) + "|" + exception),
         "app": "SECRET[settings.app]",
         "environment": "production",
-        "exception": exception,
+        "channel": "server",
+        "level": "warning",
         "message": message,
-        "file": "",
-        "line": 0,
-        "trace": detail,
-        "url": url,
-        "method": method,
-        "user_id": 0,
-        "input": "{}",
+        "context": encode_json({
+          "kind": exception,
+          "url": url,
+          "method": method,
+          "ip": client,
+          "referrer": referrer,
+          "detail": detail
+        }),
         "hostname": string!(.host),
-        "entrypoint": "http",
-        "ip": client,
-        "referrer": referrer,
-        "user_agent": ""
+        "throttle_key": md5(string!(.site_key) + "|" + exception)
       }
 
   requests:
@@ -543,9 +543,16 @@ transforms:
   # Kept out of server_cap so a flood of PHP errors can't hide these.
   one_alert_per_site:
     type: throttle
-    inputs: [traffic_alerts, server_errors]
+    inputs: [traffic_alerts]
     key_field: "{{ fingerprint }}"
     threshold: 1
+    window_secs: 300
+
+  server_error_cap:
+    type: throttle
+    inputs: [server_errors]
+    key_field: "{{ throttle_key }}"
+    threshold: 5
     window_secs: 300
 
 sinks:
@@ -563,6 +570,30 @@ sinks:
       max_events: 100
       timeout_secs: 5
     # Unsent errors stay in the log files and are read again once Log Central is back.
+    acknowledgements:
+      enabled: true
+    buffer:
+      type: memory
+      max_events: 1000
+      when_full: block
+    healthcheck:
+      enabled: false
+
+  # One-off server errors are symptoms, so they go to the Logs page, which never alerts.
+  log_central_logs:
+    type: http
+    inputs: [server_error_cap]
+    uri: "SECRET[settings.url]/api/logs"
+    method: post
+    encoding:
+      codec: json
+      except_fields: [throttle_key]
+    auth:
+      strategy: bearer
+      token: "SECRET[settings.token]"
+    batch:
+      max_events: 100
+      timeout_secs: 5
     acknowledgements:
       enabled: true
     buffer:
