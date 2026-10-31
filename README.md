@@ -53,10 +53,19 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 As root on a RunCloud or Plesk server:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/v1.0.0/install.sh | sudo bash
+curl -fsSL https://github.com/webimpian-os/log-central-agent/releases/latest/download/install.sh | sudo bash
 ```
 
-It finds the panel itself, asks for the Log Central URL, app slug and app token, and checks them before changing anything. On a server that is neither, or looks like both, it stops without changing anything.
+It installs the latest release, finds the panel itself, asks for the Log Central URL, app slug and app token, and checks them before changing anything. On a server that is neither, or looks like both, it stops without changing anything.
+
+To skip the questions, copy the command from the app's Installation tab in Log Central, which fills everything in. It looks like this:
+
+```
+d="$(mktemp -d)" && curl -fsSL https://github.com/webimpian-os/log-central-agent/releases/latest/download/install.sh -o "$d/install.sh" && \
+  echo 'PROJECT-KEY' | sudo bash "$d/install.sh" --url https://logs.example.com --app my-app --token-stdin; rm -rf "$d"
+```
+
+The key goes in on stdin, so it never shows in the server's process list.
 
 | Panel | Reads |
 |---|---|
@@ -65,12 +74,12 @@ It finds the panel itself, asks for the Log Central URL, app slug and app token,
 
 ## Update
 
-Servers don't update automatically. A new release only reaches a server when you install it there.
+Servers don't update automatically. A new release only reaches a server when you run the install command there again. It installs the latest release and keeps the server's settings and token, so it won't ask for them again.
 
-To update a server, run the installer from the new version, for example `v1.1.0`. It keeps the server's settings and token, so it won't ask for them again:
+To install a specific version instead, use its tag:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/<new-tag>/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/v1.1.0/install.sh | sudo bash
 ```
 
 To update many servers from a checkout of the new tag, one at a time:
@@ -133,7 +142,7 @@ For scale, the busiest real site on our two test servers peaked at 666 requests 
 ```
 systemctl status log-central-agent      # is it running?
 journalctl -u log-central-agent -f      # what is it doing?
-curl -fsSL https://raw.githubusercontent.com/webimpian-os/log-central-agent/v1.0.0/uninstall.sh | sudo bash
+curl -fsSL https://github.com/webimpian-os/log-central-agent/releases/latest/download/uninstall.sh | sudo bash
 ```
 
 ## Development
@@ -143,4 +152,4 @@ VECTOR=/path/to/vector scripts/test.sh     # run the tests
 scripts/rollout.sh --url URL --app SLUG web-01 web-02   # install this checkout over SSH (token from LOG_CENTRAL_TOKEN)
 ```
 
-To release: bump `AGENT_VERSION` in `install.sh` and the tags in this README, commit, tag the commit with the same version (e.g. `v1.0.1`), and push the tag. Then update the servers as above.
+To release: bump `AGENT_VERSION` in `install.sh`, commit, tag the commit with the same version (e.g. `v1.1.1`), push the tag and publish a GitHub release for it. Publishing attaches `install.sh` and `uninstall.sh`, so the latest download links move to the new version. Then update the servers as above.
