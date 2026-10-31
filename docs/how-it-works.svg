@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#121c33"/>
+    </linearGradient>
+    <linearGradient id="central" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f3b30"/>
+      <stop offset="1" stop-color="#0c2620"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7c8aa5"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#34d399"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="620" rx="20" fill="url(#bg)"/>
+
+  <text x="48" y="62" font-size="26" font-weight="700" fill="#f1f5f9">How it works</text>
+  <text x="48" y="88" font-size="14" fill="#94a3b8">One agent per RunCloud server reads the Apache error logs and sends only real PHP fatal errors to Log Central.</text>
+
+  <rect x="40" y="112" width="840" height="476" rx="16" fill="#0e1729" stroke="#334155" stroke-dasharray="6 6"/>
+  <text x="60" y="138" font-size="11" font-weight="700" letter-spacing="1.5" fill="#64748b">RUNCLOUD SERVER</text>
+
+  <g>
+    <rect x="60" y="152" width="230" height="104" rx="12" fill="#16213a" stroke="#26344f"/>
+    <rect x="78" y="166" width="32" height="32" rx="8" fill="#0ea5e9" fill-opacity="0.16"/>
+    <text x="94" y="188" font-size="17" font-weight="800" fill="#38bdf8" text-anchor="middle">W</text>
+    <text x="122" y="187" font-size="15" font-weight="700" fill="#e2e8f0">WordPress sites</text>
+    <text x="78" y="222" font-size="12.5" fill="#94a3b8">A plugin or theme throws</text>
+    <text x="78" y="240" font-size="12.5" fill="#94a3b8">a PHP fatal error</text>
+  </g>
+
+  <line x1="292" y1="204" x2="326" y2="204" stroke="#7c8aa5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g>
+    <rect x="330" y="152" width="230" height="104" rx="12" fill="#16213a" stroke="#26344f"/>
+    <rect x="348" y="166" width="32" height="32" rx="8" fill="#f59e0b" fill-opacity="0.16"/>
+    <rect x="357" y="173" width="14" height="18" rx="2" fill="none" stroke="#fbbf24" stroke-width="1.6"/>
+    <line x1="360" y1="179" x2="368" y2="179" stroke="#fbbf24" stroke-width="1.4"/>
+    <line x1="360" y1="183" x2="368" y2="183" stroke="#fbbf24" stroke-width="1.4"/>
+    <line x1="360" y1="187" x2="365" y2="187" stroke="#fbbf24" stroke-width="1.4"/>
+    <text x="392" y="187" font-size="15" font-weight="700" fill="#e2e8f0">Apache error logs</text>
+    <text x="348" y="222" font-size="11.5" fill="#fbbf24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">/home/*/logs/apache2/</text>
+    <text x="348" y="240" font-size="11.5" fill="#fbbf24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">*_error.log</text>
+  </g>
+
+  <line x1="562" y1="204" x2="596" y2="204" stroke="#7c8aa5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g>
+    <rect x="600" y="152" width="260" height="104" rx="12" fill="#1b1a3a" stroke="#3b3470"/>
+    <rect x="618" y="166" width="32" height="32" rx="8" fill="#8b5cf6" fill-opacity="0.2"/>
+    <path d="M634 172 L642 176.5 L642 185.5 L634 190 L626 185.5 L626 176.5 Z" fill="none" stroke="#a78bfa" stroke-width="1.8"/>
+    <circle cx="634" cy="181" r="2.6" fill="#a78bfa"/>
+    <text x="662" y="187" font-size="15" font-weight="700" fill="#e2e8f0">Agent (Vector)</text>
+    <text x="618" y="220" font-size="12.5" fill="#94a3b8">Follows the logs live</text>
+    <rect x="618" y="230" width="48" height="18" rx="9" fill="#8b5cf6" fill-opacity="0.18"/>
+    <text x="642" y="243" font-size="11" fill="#c4b5fd" text-anchor="middle">½ CPU</text>
+    <rect x="672" y="230" width="58" height="18" rx="9" fill="#8b5cf6" fill-opacity="0.18"/>
+    <text x="701" y="243" font-size="11" fill="#c4b5fd" text-anchor="middle">256 MB</text>
+    <rect x="736" y="230" width="104" height="18" rx="9" fill="#8b5cf6" fill-opacity="0.18"/>
+    <text x="788" y="243" font-size="11" fill="#c4b5fd" text-anchor="middle">lowest priority</text>
+  </g>
+
+  <line x1="862" y1="204" x2="926" y2="204" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="906" y="196" font-size="10.5" font-weight="700" fill="#34d399" text-anchor="middle">HTTPS</text>
+
+  <text x="60" y="292" font-size="11" font-weight="700" letter-spacing="1.2" fill="#64748b">INSIDE THE AGENT · REAL NUMBERS FROM ONE SERVER WITH 6 SITES</text>
+
+  <g>
+    <rect x="60" y="306" width="182" height="168" rx="12" fill="#16213a" stroke="#26344f"/>
+    <circle cx="80" cy="330" r="11" fill="#334155"/>
+    <text x="80" y="334.5" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">1</text>
+    <text x="98" y="335" font-size="13.5" font-weight="700" fill="#e2e8f0">Read every line</text>
+    <text x="78" y="392" font-size="32" font-weight="800" fill="#cbd5e1">167,832</text>
+    <text x="78" y="414" font-size="12.5" fill="#cbd5e1">PHP messages</text>
+    <text x="78" y="440" font-size="11.5" fill="#7c8aa5">everything Apache</text>
+    <text x="78" y="456" font-size="11.5" fill="#7c8aa5">logged for 6 sites</text>
+  </g>
+
+  <line x1="244" y1="390" x2="262" y2="390" stroke="#7c8aa5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g>
+    <rect x="266" y="306" width="182" height="168" rx="12" fill="#16213a" stroke="#26344f"/>
+    <circle cx="286" cy="330" r="11" fill="#78350f"/>
+    <text x="286" y="334.5" font-size="12" font-weight="700" fill="#fde68a" text-anchor="middle">2</text>
+    <text x="304" y="335" font-size="13.5" font-weight="700" fill="#e2e8f0">Keep fatal errors</text>
+    <text x="284" y="392" font-size="32" font-weight="800" fill="#fbbf24">2,036</text>
+    <text x="284" y="414" font-size="12.5" fill="#cbd5e1">fatal errors</text>
+    <text x="284" y="440" font-size="11.5" fill="#7c8aa5">warnings, notices,</text>
+    <text x="284" y="456" font-size="11.5" fill="#7c8aa5">deprecations dropped</text>
+  </g>
+
+  <line x1="450" y1="390" x2="468" y2="390" stroke="#7c8aa5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g>
+    <rect x="472" y="306" width="182" height="168" rx="12" fill="#16213a" stroke="#26344f"/>
+    <circle cx="492" cy="330" r="11" fill="#4c1d95"/>
+    <text x="492" y="334.5" font-size="12" font-weight="700" fill="#ddd6fe" text-anchor="middle">3</text>
+    <text x="510" y="335" font-size="13.5" font-weight="700" fill="#e2e8f0">Skip bot noise</text>
+    <text x="490" y="392" font-size="32" font-weight="800" fill="#a78bfa">1,055</text>
+    <text x="490" y="414" font-size="12.5" fill="#cbd5e1">real errors</text>
+    <text x="490" y="440" font-size="11.5" fill="#7c8aa5">bots opening plugin</text>
+    <text x="490" y="456" font-size="11.5" fill="#7c8aa5">files directly dropped</text>
+  </g>
+
+  <line x1="656" y1="390" x2="674" y2="390" stroke="#7c8aa5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g>
+    <rect x="678" y="306" width="182" height="168" rx="12" fill="#13261f" stroke="#1f5c4a"/>
+    <circle cx="698" cy="330" r="11" fill="#065f46"/>
+    <text x="698" y="334.5" font-size="12" font-weight="700" fill="#a7f3d0" text-anchor="middle">4</text>
+    <text x="716" y="335" font-size="13.5" font-weight="700" fill="#e2e8f0">Group repeats</text>
+    <text x="696" y="392" font-size="32" font-weight="800" fill="#34d399">40</text>
+    <text x="696" y="414" font-size="12.5" fill="#cbd5e1">error groups</text>
+    <text x="696" y="440" font-size="11.5" fill="#7c8aa5">each sent at most</text>
+    <text x="696" y="456" font-size="11.5" fill="#7c8aa5">once per 5 minutes</text>
+  </g>
+
+  <rect x="60" y="494" width="800" height="74" rx="10" fill="#0a1222" stroke="#26344f"/>
+  <text x="80" y="522" font-size="12.5" fill="#94a3b8">Each error arrives labelled with its site, with server paths removed:</text>
+  <text x="80" y="550" font-size="13.5" fill="#e2e8f0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"><tspan fill="#34d399">[shop.example.com]</tspan> Call to a member function get() on null</text>
+
+  <g>
+    <rect x="930" y="152" width="230" height="200" rx="14" fill="url(#central)" stroke="#1f6b55"/>
+    <rect x="948" y="168" width="32" height="32" rx="8" fill="#10b981" fill-opacity="0.2"/>
+    <rect x="955" y="185" width="4" height="9" rx="1" fill="#34d399"/>
+    <rect x="962" y="179" width="4" height="15" rx="1" fill="#34d399"/>
+    <rect x="969" y="174" width="4" height="20" rx="1" fill="#34d399"/>
+    <text x="992" y="190" font-size="17" font-weight="700" fill="#ecfdf5">Log Central</text>
+    <text x="948" y="234" font-size="12.5" fill="#a7f3d0">Error groups for each site</text>
+    <text x="948" y="258" font-size="12.5" fill="#a7f3d0">Alerts when a site breaks</text>
+    <text x="948" y="282" font-size="12.5" fill="#a7f3d0">Resolve, snooze, add notes</text>
+    <text x="948" y="326" font-size="11" fill="#6ee7b7" fill-opacity="0.75">At most 300 errors a minute</text>
+    <text x="948" y="341" font-size="11" fill="#6ee7b7" fill-opacity="0.75">per server, in batches of 100</text>
+  </g>
+
+  <g>
+    <rect x="930" y="372" width="230" height="216" rx="14" fill="#16213a" stroke="#26344f"/>
+    <text x="948" y="402" font-size="15" font-weight="700" fill="#e2e8f0">Safe for the server</text>
+    <g font-size="12.5" fill="#cbd5e1">
+      <text x="948" y="436"><tspan fill="#34d399" font-weight="700">✓</tspan>  ½ CPU core, lowest priority</text>
+      <text x="948" y="464"><tspan fill="#34d399" font-weight="700">✓</tspan>  256 MB memory cap</text>
+      <text x="948" y="492"><tspan fill="#34d399" font-weight="700">✓</tspan>  Writes only a few KB</text>
+      <text x="948" y="520"><tspan fill="#34d399" font-weight="700">✓</tspan>  Never waits on Log Central</text>
+      <text x="948" y="548"><tspan fill="#34d399" font-weight="700">✓</tspan>  Token hidden from the sites</text>
+    </g>
+  </g>
+</svg>
