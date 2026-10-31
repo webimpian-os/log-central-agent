@@ -17,7 +17,7 @@ tests:
               assert_eq!(.app, "wordpress-sites")
               assert_eq!(.environment, "production")
               assert_eq!(.exception, "Error")
-              assert_eq!(.message, "[demo-shop.test] Class \"NinjaFirewall_log\" not found")
+              assert_eq!(.message, "[demo-shop.test] ninjafirewall plugin: Class \"NinjaFirewall_log\" not found")
               assert_eq!(.file, "public/wp-content/nfwlog/dropins.php")
               assert_eq!(.line, 2)
               assert!(starts_with(string!(.trace), "#0 public/wp-content/nfwlog/dropins.php(2): nfw_dropin_block()\n#1 public/wp-content/plugins/"))
@@ -49,7 +49,7 @@ tests:
           - type: vrl
             source: |
               assert_eq!(.exception, "PHP Fatal error")
-              assert_eq!(.message, "[demo-shop.test] Allowed memory size of 1073741824 bytes exhausted (tried to allocate 67108864 bytes)")
+              assert_eq!(.message, "[demo-shop.test] woo-order-export-lite plugin: Allowed memory size of 1073741824 bytes exhausted (tried to allocate 67108864 bytes)")
               assert_eq!(.file, "public/wp-content/plugins/woo-order-export-lite/classes/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/Cell.php")
               assert_eq!(.line, 209)
               assert_eq!(.trace, "")
@@ -70,7 +70,7 @@ tests:
           - type: vrl
             source: |
               assert_eq!(.exception, "ValueError")
-              assert_eq!(.message, "[bakery.test] curl_setopt(): Argument #2 ($option) is not a valid cURL option")
+              assert_eq!(.message, "[bakery.test] bugsnag plugin: curl_setopt(): Argument #2 ($option) is not a valid cURL option")
               assert_eq!(.file, "public/wp-content/plugins/bugsnag/bugsnag-php/Notification.php")
               assert_eq!(.line, 239)
               assert_eq!(.trace, "#0 public/wp-content/plugins/bugsnag/bugsnag-php/Notification.php(239): curl_setopt()\n#1 public/wp-con...")
@@ -109,7 +109,7 @@ tests:
             source: |
               assert_eq!(.timestamp, "2026-10-31 01:00:00.000")
               assert_eq!(.exception, "PHP Parse error")
-              assert_eq!(.message, "[demo-shop.test] syntax error, unexpected token \"}\"")
+              assert_eq!(.message, "[demo-shop.test] storefront theme: syntax error, unexpected token \"}\"")
               assert_eq!(.file, "public/wp-content/themes/storefront/functions.php")
               assert_eq!(.line, 12)
 
@@ -128,7 +128,7 @@ tests:
           - type: vrl
             source: |
               assert_eq!(.exception, "Automattic\\WooCommerce\\Vendor\\Exception")
-              assert_eq!(.message, "[newsite] boom")
+              assert_eq!(.message, "[newsite] woocommerce plugin: boom")
               assert_eq!(.trace, "#0 public/wp-settings.php(593): Example->run()\n#1 {main}")
               assert_eq!(.url, "")
               assert_eq!(.ip, "2001:db8::7")
@@ -249,7 +249,7 @@ tests:
           - type: vrl
             source: |
               assert_eq!(.exception, "Automattic\\WooCommerce\\Vendor\\Exception")
-              assert_eq!(.message, "[shop.test] Class \"Demo_Gateway\" not found")
+              assert_eq!(.message, "[shop.test] demo plugin: Class \"Demo_Gateway\" not found")
               assert_eq!(.file, "httpdocs/wp-content/plugins/demo/demo.php")
               assert_eq!(.trace, "#0 httpdocs/wp-settings.php(545): include_once()\n#1 {main}")
               assert_eq!(.url, "https://shop.test/checkout/")
@@ -271,7 +271,7 @@ tests:
         conditions:
           - type: vrl
             source: |
-              assert_eq!(.message, "[shop.test] Call to undefined function demo_render()")
+              assert_eq!(.message, "[shop.test] demo plugin: Call to undefined function demo_render()")
               assert_eq!(.file, "httpdocs/wp-content/plugins/demo/demo.php")
               assert_eq!(.line, 603)
               assert_eq!(.trace, "#0 httpdocs/wp-content/plugins/demo/demo.php(365): Demo->render()\n#1 ...")
@@ -355,3 +355,36 @@ tests:
               assert_eq!(.file, "help.shop.test/include/class.file.php")
               assert_eq!(.line, 685)
               assert_eq!(.trace, "#0 help.shop.test/include/class.file.php(549): FileStorage->getBackend()\n#1 help.shop.test/index.php(17): require('...')\n#2 {main}")
+
+  - name: an error inside WordPress is blamed on the nearest plugin in the trace
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-02
+          file: /var/www/vhosts/system/shop.test/logs/error_log
+          message: |-
+            [Tue Oct 20 13:25:40.099250 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught TypeError: array_merge(): Argument #2 must be of type array, null given in /var/www/vhosts/shop.test/httpdocs/wp-includes/class-wp-hook.php:324\nStack trace:\n#0 /var/www/vhosts/shop.test/httpdocs/wp-includes/class-wp-hook.php(324): array_merge()\n#1 /var/www/vhosts/shop.test/httpdocs/wp-content/plugins/acme-forms/includes/hooks.php(88): WP_Hook->apply_filters()\n#2 /var/www/vhosts/shop.test/httpdocs/wp-content/themes/astra/functions.php(12): acme_forms_init()\n#3 {main}\n  thrown in /var/www/vhosts/shop.test/httpdocs/wp-includes/class-wp-hook.php on line 324'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[shop.test] acme-forms plugin: array_merge(): Argument #2 must be of type array, null given")
+              assert_eq!(.file, "httpdocs/wp-includes/class-wp-hook.php")
+
+  - name: a must-use plugin file is named without its extension
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-02
+          file: /var/www/vhosts/system/shop.test/logs/error_log
+          message: |-
+            [Tue Oct 20 13:25:40.099250 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Call to undefined function cache_boot() in /var/www/vhosts/shop.test/httpdocs/wp-content/mu-plugins/fast-cache.php:5\nStack trace:\n#0 /var/www/vhosts/shop.test/httpdocs/wp-settings.php(390): include_once()\n#1 {main}\n  thrown in /var/www/vhosts/shop.test/httpdocs/wp-content/mu-plugins/fast-cache.php on line 5'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[shop.test] fast-cache mu-plugin: Call to undefined function cache_boot()")

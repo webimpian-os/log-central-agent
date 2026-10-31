@@ -135,6 +135,19 @@ transforms:
       if contains(message, "ABSPATH") { abort }
       if trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/') { abort }
 
+      component = parse_regex(file, r'(?:^|/)wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)') ?? null
+      if component == null {
+        # Errors inside WordPress itself: blame the nearest plugin or theme.
+        component = parse_regex(trace, r'wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)/') ?? null
+      }
+      culprit = ""
+      if component != null {
+        kind = string!(component.kind)
+        suffix = " plugin: "
+        if kind == "themes" { suffix = " theme: " } else if kind == "mu-plugins" { suffix = " mu-plugin: " }
+        culprit = replace(string!(component.name), r'\.php$', "") + suffix
+      }
+
       site_key = string!(.site_key)
       url = string!(.site_url)
       if url != "" { url = url + path }
@@ -145,7 +158,7 @@ transforms:
         "app": "SECRET[settings.app]",
         "environment": "production",
         "exception": exception,
-        "message": "[" + string!(.site_label) + "] " + message,
+        "message": "[" + string!(.site_label) + "] " + culprit + message,
         "file": file,
         "line": line,
         "trace": trace,
