@@ -36,19 +36,31 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 
 ## What it detects
 
-| Problem | Status | How it shows up |
-|---|---|---|
-| PHP fatal or parse error, logged by Apache or nginx | ✅ Detected | One error group per site and code location, titled with the plugin or theme behind it, with the request and the stack trace |
-| PHP warnings, notices and deprecations | 🔇 Ignored | Too noisy, and they don't break the page |
-| Bots opening WordPress files directly | 🔇 Ignored | The site isn't broken |
-| A site where most requests fail (500, 502, 503 or 504) | ✅ Detected | "Site failing", with the paths that failed |
-| A single 5xx response now and then | 🔇 Ignored | Mostly bots probing paths that don't exist. A timeout or PHP crash behind it is still reported |
-| PHP not responding, requests timing out, PHP crashing mid-request, nginx out of connections | ✅ Detected | "PHP not responding", "Request timed out", "PHP crashed mid-request" or "nginx overloaded", one group per site, with the request |
-| A flood or DDoS on a site (3,000+ requests a minute, or 10× its usual traffic) | ✅ Detected | "Traffic spike", with the top IPs, paths, user agents and status codes |
-| A brute-force login attack (60+ attempts a minute from one address) | ✅ Detected | "Brute force", naming the address, on `wp-login.php` or `xmlrpc.php` |
-| Slow pages | ⏳ Not yet | Needs request times in the web server logs |
-| Server CPU, memory or disk | ❌ Not covered | Use a server monitor such as Beszel |
-| Blocking an attack | ❌ Not covered | Detection only. Blocking stays with Cloudflare, Imunify360 or the panel's firewall |
+**✅ Reported**
+
+| Problem | Shows up in Log Central as |
+|---|---|
+| A PHP fatal or parse error | One group per site and code location, titled with the plugin or theme behind it, with the request and stack trace |
+| PHP not responding, a request timing out, PHP crashing mid-request, nginx out of connections | "PHP not responding", "Request timed out", "PHP crashed mid-request" or "nginx overloaded", one group per site |
+| Most of a site's requests failing (500, 502, 503 or 504) | "Site failing", with the paths that failed |
+| A flood or DDoS: 3,000+ requests a minute, or 10× a site's usual traffic | "Traffic spike", with the top IPs, paths, user agents and status codes |
+| 60+ login attempts a minute from one address | "Brute force", naming the address |
+
+**🔇 Ignored on purpose**
+
+| Problem | Why |
+|---|---|
+| PHP warnings, notices and deprecations | Too noisy, and they don't break the page |
+| Bots opening WordPress files directly | The site isn't broken |
+| A single 5xx response now and then | Mostly bots probing paths that don't exist. A timeout or PHP crash behind it is still reported |
+
+**❌ Not covered**
+
+| Problem | Instead |
+|---|---|
+| Slow pages | Not yet: needs request times in the web server logs |
+| Server CPU, memory or disk | A server monitor such as Beszel |
+| Blocking an attack | Cloudflare, Imunify360 or the panel's firewall. The agent only detects |
 
 ## Install
 
