@@ -169,8 +169,13 @@ preflight
 say "Checking the app token against $url"
 check_token
 
-if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/config/pipeline.yaml" ]; then
-    src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_dir=""
+if [ -n "${BASH_SOURCE[0]:-}" ]; then
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+# A folder anyone can write to, like /tmp, could hold someone else's config.
+if [ -n "$script_dir" ] && [ -f "$script_dir/config/pipeline.yaml" ] && [ -z "$(find "$script_dir" -maxdepth 0 -perm -0002)" ]; then
+    src="$script_dir"
 else
     say "Downloading $NAME $AGENT_VERSION"
     mkdir -p "$work/src"
