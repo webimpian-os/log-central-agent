@@ -145,6 +145,7 @@ id -u "$SERVICE_USER" >/dev/null 2>&1 \
     || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
 
 install -m 0644 "$src/config/pipeline.yaml" "$src/config/runtime.yaml" "$PREFIX/config/"
+install -m 0644 "$src/config/panels/runcloud.yaml" "$PREFIX/config/panel.yaml"
 install -m 0755 "$src/bin/refresh-sites" "$PREFIX/bin/refresh-sites"
 install -m 0644 "$src/systemd/log-central-agent.service" "$src/systemd/log-central-agent-sites.service" \
     "$src/systemd/log-central-agent-sites.timer" /etc/systemd/system/
@@ -168,7 +169,7 @@ install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR"
 "$PREFIX/bin/refresh-sites"
 
 runuser -u "$SERVICE_USER" -- "$PREFIX/bin/vector" validate --no-environment --resolve-secrets \
-    "$PREFIX/config/pipeline.yaml" "$PREFIX/config/runtime.yaml" >/dev/null \
+    "$PREFIX/config/pipeline.yaml" "$PREFIX/config/panel.yaml" "$PREFIX/config/runtime.yaml" >/dev/null \
     || fail "Vector rejected the configuration"
 
 systemctl daemon-reload

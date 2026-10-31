@@ -1,41 +1,66 @@
-sources:
-  apache_error_logs:
-    type: file
-    include:
-      - /home/*/logs/apache2/*_error.log
-      # Lets Vector follow logrotate's copytruncate without losing lines.
-      - /home/*/logs/apache2/*_error.log-*
-    exclude:
-      - /home/*/logs/apache2/*.gz
-    read_from: beginning
-    ignore_older_secs: 86400
-    # Otherwise deleted rotated logs keep holding disk space.
-    rotate_wait_secs: 300
-    max_line_bytes: 262144
-
+# Sources: config/panels/<panel>.yaml.
 transforms:
   php_fatals:
     type: remap
-    inputs: [apache_error_logs]
+    inputs: [apache_error_logs, nginx_error_logs]
     drop_on_abort: true
     drop_on_error: true
     source: |
-      entry = parse_regex(string!(.message), r'^\[(?P<time>\w{3} \w{3} \d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? \d{4})\] \[proxy_fcgi:error\] \[[^\]]*\](?: \[client (?P<client>[^\]]*)\])? AH01071: Got error \'(?P<body>.*)\'(?:, referer: (?P<referer>.*))?$') ?? null
-      if entry == null { abort }
+      raw = string!(.message)
+      if !contains(raw, "PHP Fatal error:") && !contains(raw, "PHP Parse error:") { abort }
 
-      fatals = filter(split(string!(entry.body), "PHP message: ")) -> |_index, part| {
+      time = null
+      body = ""
+      escaped = false
+      client = ""
+      referrer = ""
+      method = "-"
+      path = ""
+      server = ""
+
+      if starts_with(raw, "[") {
+        entry = parse_regex(raw, r'^\[(?P<time>\w{3} \w{3} \d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? \d{4})\] \[proxy_fcgi:error\] \[[^\]]*\](?: \[client (?P<client>[^\]]*)\])? AH01071: Got error \'(?P<body>.*)\'(?:, referer: (?P<referer>.*))?$') ?? null
+        if entry == null { abort }
+        time = parse_timestamp!(string!(entry.time), "%a %b %d %H:%M:%S%.f %Y")
+        body = string!(entry.body)
+        escaped = true
+        client = replace(string(entry.client) ?? "", r':\d+$', "")
+        referrer = string(entry.referer) ?? ""
+      } else {
+        entry = parse_regex(raw, r'(?s)^(?P<time>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[error\] \d+#\d+: (?:\*\d+ )?FastCGI sent in stderr: "(?P<body>.*?)(?:" while (?P<context>[^\n]*))?$') ?? null
+        if entry == null { abort }
+        time = parse_timestamp!(string!(entry.time), "%Y/%m/%d %H:%M:%S")
+        body = string!(entry.body)
+        context = string(entry.context) ?? ""
+        found = parse_regex(context, r'client: (?P<v>[^,]+)') ?? {}
+        client = string(found.v) ?? ""
+        found = parse_regex(context, r'server: (?P<v>[^,]+)') ?? {}
+        server = string(found.v) ?? ""
+        found = parse_regex(context, r'request: "(?P<method>[A-Z]+) (?P<path>[^ "?]*)') ?? {}
+        method = string(found.method) ?? "-"
+        path = string(found.path) ?? ""
+        found = parse_regex(context, r'referrer: "(?P<v>[^"]*)"') ?? {}
+        referrer = string(found.v) ?? ""
+      }
+
+      fatals = filter(split(body, "PHP message: ")) -> |_index, part| {
         starts_with(part, "PHP Fatal error:") || starts_with(part, "PHP Parse error:")
       }
       if length(fatals) == 0 { abort }
 
-      # Later fatals on a line are knock-on failures.
-      text = replace(string!(fatals[0]), r';\s*$', "")
-      text = replace_with(text, r'\\(.)') -> |escaped| {
-        char = string!(escaped.captures[0])
-        if char == "n" { "\n" } else if char == "t" { "\t" } else { char }
+      # Later fatals are knock-on failures.
+      text = replace(string!(fatals[0]), r'[;\s]+$', "")
+      if escaped {
+        text = replace_with(text, r'\\(.)') -> |escape| {
+          char = string!(escape.captures[0])
+          if char == "n" { "\n" } else if char == "t" { "\t" } else { char }
+        }
       }
       text = replace(text, r'/home/[^/\s]+/webapps/[^/\s]+/', "")
-      text = replace(text, r'/home/\S*\.\.\.$', "...")
+      text = replace(text, r'/var/www/vhosts/[^/\s]+/', "")
+      text = replace(text, r'(^|\s)/\S*\.\.\.$', "$1...")
+      # PHP shortens long trace arguments mid-path.
+      text = replace(text, r'\'/[^\'\s]*\.\.\.\'', "'...'")
 
       exception = if starts_with(text, "PHP Parse error:") { "PHP Parse error" } else { "PHP Fatal error" }
       message = replace(text, r'^PHP (?:Fatal|Parse) error:\s+', "")
@@ -44,6 +69,10 @@ transforms:
       trace = ""
 
       uncaught = parse_regex(text, r'(?s)^PHP Fatal error:\s+Uncaught (?P<class>[^\s:]+): (?P<message>.*?) in (?P<file>\S+?):(?P<line>\d+)(?:\n(?P<rest>.*))?$') ?? null
+      if uncaught == null {
+        # PHP 5 format.
+        uncaught = parse_regex(text, r'(?s)^PHP Fatal error:\s+Uncaught exception \'(?P<class>[^\']+)\' with message \'(?P<message>.*?)\' in (?P<file>\S+?):(?P<line>\d+)(?:\n(?P<rest>.*))?$') ?? null
+      }
       plain = parse_regex(text, r'(?s)^PHP (?:Fatal|Parse) error:\s+(?P<message>.*) in (?P<file>\S+) on line (?P<line>\d+)') ?? null
 
       if uncaught != null {
@@ -54,6 +83,10 @@ transforms:
         trace = replace(string(uncaught.rest) ?? "", r'^Stack trace:\n', "")
         trace = replace(trace, r'(?s)\n\s*thrown in .*$', "")
         if !starts_with(trace, "#") { trace = "" }
+        # nginx cuts long entries without a marker.
+        if trace != "" && !ends_with(trace, "{main}") && !ends_with(trace, "...") {
+          trace = replace(trace, r'(^|\s)/\S*$', "$1") + "..."
+        }
       } else if plain != null {
         message = string!(plain.message)
         file = string!(plain.file)
@@ -64,21 +97,31 @@ transforms:
       if contains(message, "ABSPATH") { abort }
       if trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/') { abort }
 
-      site = parse_regex!(string!(.file), r'/logs/apache2/(?P<webapp>.+?)_error\.log(?:-\d+)?$')
-      webapp = site.webapp
       host = string(.host) ?? "unknown"
-      row, missing = get_enrichment_table_record("sites", {"webapp": webapp})
-      domain = if missing == null { string(row.domain) ?? "" } else { "" }
-      site_key = host + "/" + webapp
-      label = webapp
+      log_path = string(.file) ?? ""
+      name = "unknown"
+      domain = ""
+      plesk = parse_regex(log_path, r'^/var/www/vhosts/system/(?P<domain>[^/]+)/logs/') ?? null
+      runcloud = parse_regex(log_path, r'/logs/(?:apache2|nginx)/(?P<webapp>.+?)_error\.log(?:-\d+)?$') ?? null
+      if plesk != null {
+        domain = string!(plesk.domain)
+        name = domain
+      } else if runcloud != null {
+        name = string!(runcloud.webapp)
+        row, missing = get_enrichment_table_record("sites", {"webapp": name})
+        if missing == null { domain = string(row.domain) ?? "" }
+      }
+      # Native NGINX sites on RunCloud have no Apache config.
+      if domain == "" && match(server, r'^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$') { domain = server }
+
+      site_key = host + "/" + name
+      label = name
       url = ""
       if domain != "" {
         site_key = domain
         label = domain
-        url = "https://" + domain
+        url = "https://" + domain + path
       }
-
-      time = parse_timestamp!(string!(entry.time), "%a %b %d %H:%M:%S%.f %Y")
 
       . = {
         "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
@@ -91,13 +134,13 @@ transforms:
         "line": line,
         "trace": trace,
         "url": url,
-        "method": "-",
+        "method": method,
         "user_id": 0,
         "input": "{}",
         "hostname": host,
         "entrypoint": "http",
-        "ip": replace(string(entry.client) ?? "", r':\d+$', ""),
-        "referrer": string(entry.referer) ?? "",
+        "ip": client,
+        "referrer": referrer,
         "user_agent": ""
       }
 

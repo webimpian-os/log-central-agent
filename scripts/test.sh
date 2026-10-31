@@ -4,7 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 vector="${VECTOR:-vector}"
 
-"$vector" test config/pipeline.yaml tests/runtime.yaml tests/*.test.yaml
+for panel in config/panels/*.yaml; do
+    echo "== $(basename "$panel" .yaml)"
+    "$vector" test config/pipeline.yaml "$panel" tests/runtime.yaml tests/*.test.yaml
+done
 tests/refresh_sites.test.sh
 
 if command -v shellcheck >/dev/null; then

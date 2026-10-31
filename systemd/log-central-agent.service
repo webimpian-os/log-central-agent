@@ -1,5 +1,5 @@
 [Unit]
-Description=Ship PHP fatal errors from RunCloud sites to Log Central
+Description=Send PHP fatal errors from this server's sites to Log Central
 Documentation=https://github.com/webimpian-os/log-central-agent
 After=network-online.target
 Wants=network-online.target
@@ -9,7 +9,7 @@ StartLimitBurst=5
 [Service]
 User=log-central-agent
 Group=log-central-agent
-ExecStart=/opt/log-central-agent/bin/vector --threads 2 --config /opt/log-central-agent/config/pipeline.yaml --config /opt/log-central-agent/config/runtime.yaml
+ExecStart=/opt/log-central-agent/bin/vector --threads 2 --config /opt/log-central-agent/config/pipeline.yaml --config /opt/log-central-agent/config/panel.yaml --config /opt/log-central-agent/config/runtime.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10
@@ -29,7 +29,7 @@ RestrictSUIDSGID=yes
 Nice=19
 IOSchedulingClass=idle
 CPUQuota=50%
-# MemoryLimit for cgroup v1 (Ubuntu 20.04), MemoryMax for v2.
+# MemoryLimit for cgroup v1, MemoryMax for v2.
 MemoryLimit=256M
 MemoryMax=256M
 LimitNOFILE=65536

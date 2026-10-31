@@ -1,0 +1,32 @@
+sources:
+  apache_error_logs:
+    type: file
+    include:
+      - /home/*/logs/apache2/*_error.log
+      # Lets Vector follow logrotate's copytruncate without losing lines.
+      - /home/*/logs/apache2/*_error.log-*
+    exclude:
+      - /home/*/logs/apache2/*.gz
+    read_from: beginning
+    ignore_older_secs: 86400
+    # Otherwise deleted rotated logs keep holding disk space.
+    rotate_wait_secs: 300
+    max_line_bytes: 262144
+
+  # Only native NGINX sites log PHP errors here.
+  nginx_error_logs:
+    type: file
+    include:
+      - /home/*/logs/nginx/*_error.log
+      - /home/*/logs/nginx/*_error.log-*
+    exclude:
+      - /home/*/logs/nginx/*.gz
+    read_from: beginning
+    ignore_older_secs: 86400
+    rotate_wait_secs: 300
+    max_line_bytes: 262144
+    multiline:
+      start_pattern: '^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \['
+      condition_pattern: '^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \['
+      mode: halt_before
+      timeout_ms: 1000
