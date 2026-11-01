@@ -134,8 +134,8 @@ transforms:
       # Bots hitting WordPress files directly, not a broken site.
       if contains(message, "ABSPATH") { abort }
       if trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/') { abort }
-      # Scanners sending broken REST batch requests trip a WordPress core bug.
-      if contains(message, "WP_Error::set_url_params()") && contains(trace, "serve_batch_request_v1") { abort }
+      # A scanner tripping a WordPress core bug: worth a log, not an error.
+      probe = contains(message, "WP_Error::set_url_params()") && contains(trace, "serve_batch_request_v1")
 
       owner = parse_regex(file, r'(?:^|/)wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)') ?? null
       owner_key = if owner != null { string!(owner.kind) + "/" + string!(owner.name) } else { "" }
@@ -182,25 +182,39 @@ transforms:
       url = string!(.site_url)
       if url != "" { url = url + path }
 
-      . = {
-        "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
-        "fingerprint": md5(site_key + "|" + exception + "|" + file + "|" + to_string(line)),
-        "app": "SECRET[settings.app]",
-        "environment": "production",
-        "exception": exception,
-        "message": "[" + string!(.site_label) + "] " + culprit + message,
-        "file": file,
-        "line": line,
-        "trace": trace,
-        "url": url,
-        "method": method,
-        "user_id": 0,
-        "input": "{}",
-        "hostname": string!(.host),
-        "entrypoint": "http",
-        "ip": client,
-        "referrer": referrer,
-        "user_agent": ""
+      if probe {
+        . = {
+          "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
+          "app": "SECRET[settings.app]",
+          "environment": "production",
+          "channel": "security",
+          "level": "notice",
+          "message": "[" + string!(.site_label) + "] A scanner sent a broken REST batch request from " + client,
+          "context": encode_json({"kind": "Scanner probe", "url": url, "ip": client, "detail": message}),
+          "hostname": string!(.host),
+          "throttle_key": md5(site_key + "|Scanner probe")
+        }
+      } else {
+        . = {
+          "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
+          "fingerprint": md5(site_key + "|" + exception + "|" + file + "|" + to_string(line)),
+          "app": "SECRET[settings.app]",
+          "environment": "production",
+          "exception": exception,
+          "message": "[" + string!(.site_label) + "] " + culprit + message,
+          "file": file,
+          "line": line,
+          "trace": trace,
+          "url": url,
+          "method": method,
+          "user_id": 0,
+          "input": "{}",
+          "hostname": string!(.host),
+          "entrypoint": "http",
+          "ip": client,
+          "referrer": referrer,
+          "user_agent": ""
+        }
       }
 
   recent_fatals:
@@ -209,6 +223,14 @@ transforms:
     # A first install reads whole logs; skip old fatals.
     condition: |
       to_unix_timestamp(parse_timestamp!(.timestamp, "%Y-%m-%d %H:%M:%S%.f", timezone: "UTC")) >= to_unix_timestamp(now()) - 86400
+
+  fatal_split:
+    type: route
+    inputs: [recent_fatals]
+    reroute_unmatched: false
+    route:
+      errors: '!exists(.channel)'
+      logs: 'exists(.channel)'
 
   server_errors:
     type: remap
@@ -579,7 +601,7 @@ transforms:
 
   one_per_fingerprint:
     type: throttle
-    inputs: [recent_fatals]
+    inputs: [fatal_split.errors]
     key_field: "{{ fingerprint }}"
     threshold: 1
     window_secs: 300
@@ -608,7 +630,7 @@ transforms:
 
   server_error_cap:
     type: throttle
-    inputs: [server_errors]
+    inputs: [server_errors, fatal_split.logs]
     key_field: "{{ throttle_key }}"
     threshold: 5
     window_secs: 300

@@ -56,6 +56,7 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 | PHP not responding, a request timing out, PHP crashing mid-request, nginx out of connections | `server`, at most 5 per site and kind every 5 minutes |
 | A flood or DDoS the site handles: 3,000+ requests a minute, or 10× its usual traffic | `traffic`, with the top IPs, paths, user agents and status codes |
 | 60+ login attempts a minute from one address | `security`, naming the address |
+| A scanner sending a broken request to the REST batch endpoint, which trips a WordPress core bug | `security`, naming the address |
 
 **🔇 Ignored on purpose**
 
@@ -63,7 +64,6 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 |---|---|
 | PHP warnings, notices and deprecations | Too noisy, and they don't break the page |
 | Bots opening WordPress files directly | The site isn't broken |
-| Scanners sending broken requests to the REST batch endpoint | They trip a WordPress core bug, and the site isn't broken |
 | A single 5xx response now and then | Mostly bots probing paths that don't exist. A timeout or PHP crash behind it is still reported |
 
 **❌ Not covered**
