@@ -134,6 +134,8 @@ transforms:
       # Bots hitting WordPress files directly, not a broken site.
       if contains(message, "ABSPATH") { abort }
       if trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/') { abort }
+      # Scanners sending broken REST batch requests trip a WordPress core bug.
+      if contains(message, "WP_Error::set_url_params()") && contains(trace, "serve_batch_request_v1") { abort }
 
       owner = parse_regex(file, r'(?:^|/)wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)') ?? null
       owner_key = if owner != null { string!(owner.kind) + "/" + string!(owner.name) } else { "" }

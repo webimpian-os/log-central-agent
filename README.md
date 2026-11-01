@@ -63,6 +63,7 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 |---|---|
 | PHP warnings, notices and deprecations | Too noisy, and they don't break the page |
 | Bots opening WordPress files directly | The site isn't broken |
+| Scanners sending broken requests to the REST batch endpoint | They trip a WordPress core bug, and the site isn't broken |
 | A single 5xx response now and then | Mostly bots probing paths that don't exist. A timeout or PHP crash behind it is still reported |
 
 **❌ Not covered**
