@@ -134,8 +134,7 @@ tests:
               assert_eq!(.ip, "2001:db8::7")
               assert_eq!(.fingerprint, md5("web-01/newsite|Automattic\\WooCommerce\\Vendor\\Exception|public/wp-content/plugins/woocommerce/src/Example.php|10"))
 
-  - name: bot hitting a WordPress file directly is not reported
-    no_outputs_from: [php_fatals]
+  - name: a bot opening a WordPress file directly is a security notice, not an error
     inputs:
       - insert_at: error_lines
         type: log
@@ -144,9 +143,19 @@ tests:
           file: /home/demoshop/logs/apache2/demoshop_error.log
           message: |-
             [Mon Oct 12 22:59:08.578805 2026] [proxy_fcgi:error] [pid 2649:tid 2691] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Call to undefined function add_action() in /home/demoshop/webapps/demoshop/public/wp-includes/blocks/search.php:213\nStack trace:\n#0 {main}\n  thrown in /home/demoshop/webapps/demoshop/public/wp-includes/blocks/search.php on line 213', referer: http://demo-shop.test/wp-includes/blocks/search.php
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "security")
+              assert_eq!(.level, "notice")
+              assert_eq!(.message, "[demo-shop.test] A bot opened public/wp-includes/blocks/search.php directly from 203.0.113.9")
+              assert_eq!(.throttle_key, md5("demo-shop.test|Bot opening WordPress files"))
+              assert!(!exists(.fingerprint))
+              assert_eq!(parse_json!(.context).kind, "Bot opening WordPress files")
 
-  - name: fatal caused by a missing ABSPATH is not reported
-    no_outputs_from: [php_fatals]
+  - name: a bot tripping a missing ABSPATH is a security notice, not an error
     inputs:
       - insert_at: error_lines
         type: log
@@ -155,6 +164,14 @@ tests:
           file: /home/demoshop/logs/apache2/demoshop_error.log
           message: |-
             [Sat Jul 25 08:08:14.192153 2026] [proxy_fcgi:error] [pid 2646:tid 2694] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Warning:  Use of undefined constant ABSPATH - assumed 'ABSPATH' (this will throw an Error in a future version of PHP) in /home/demoshop/webapps/demoshop/public/wp-includes/blocks/index.php on line 9PHP message: PHP Fatal error:  require(): Failed opening required 'ABSPATHWPINC/blocks/archives.php' (include_path='.:') in /home/demoshop/webapps/demoshop/public/wp-includes/blocks/index.php on line 9'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "security")
+              assert_eq!(.message, "[demo-shop.test] A bot opened public/wp-includes/blocks/index.php directly from 203.0.113.9")
+              assert!(!exists(.fingerprint))
 
   - name: warnings alone are not reported
     no_outputs_from: [php_fatals]

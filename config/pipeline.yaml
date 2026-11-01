@@ -134,11 +134,13 @@ transforms:
         line = to_int!(plain.line)
       }
 
-      # Bots hitting WordPress files directly, not a broken site.
-      if contains(message, "ABSPATH") { abort }
-      if trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/') { abort }
-      # A scanner tripping a WordPress core bug: worth a log, not an error.
-      probe = contains(message, "WP_Error::set_url_params()") && contains(trace, "serve_batch_request_v1")
+      # Bots opening WordPress files directly and scanners tripping a core bug: worth a log, not an error.
+      probe = ""
+      if contains(message, "ABSPATH") || (trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/')) {
+        probe = "Bot opening WordPress files"
+      } else if contains(message, "WP_Error::set_url_params()") && contains(trace, "serve_batch_request_v1") {
+        probe = "Scanner probe"
+      }
 
       owner = parse_regex(file, r'(?:^|/)wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)') ?? null
       owner_key = if owner != null { string!(owner.kind) + "/" + string!(owner.name) } else { "" }
@@ -185,17 +187,18 @@ transforms:
       url = string!(.site_url)
       if url != "" { url = url + path }
 
-      if probe {
+      if probe != "" {
+        sentence = if probe == "Scanner probe" { "A scanner sent a broken REST batch request" } else { "A bot opened " + file + " directly" }
         . = {
           "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
           "app": "SECRET[settings.app]",
           "environment": "production",
           "channel": "security",
           "level": "notice",
-          "message": "[" + string!(.site_label) + "] A scanner sent a broken REST batch request from " + client,
-          "context": encode_json({"kind": "Scanner probe", "url": url, "ip": client, "detail": message}),
+          "message": "[" + string!(.site_label) + "] " + sentence + " from " + client,
+          "context": encode_json({"kind": probe, "url": url, "ip": client, "file": file, "detail": message}),
           "hostname": string!(.host),
-          "throttle_key": md5(site_key + "|Scanner probe")
+          "throttle_key": md5(site_key + "|" + probe)
         }
       } else {
         . = {
@@ -788,14 +791,14 @@ transforms:
 
   server_error_cap:
     type: throttle
-    inputs: [server_errors, fatal_split.logs]
+    inputs: [server_errors]
     key_field: "{{ throttle_key }}"
     threshold: 5
     window_secs: 300
 
   notable_cap:
     type: throttle
-    inputs: [notable_messages]
+    inputs: [notable_messages, fatal_split.logs]
     key_field: "{{ throttle_key }}"
     threshold: 1
     window_secs: 3600
