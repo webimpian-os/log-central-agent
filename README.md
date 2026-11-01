@@ -27,6 +27,7 @@ Everything else worth knowing goes to the **Logs** page, which never alerts:
 - **Server errors:** PHP not responding, requests timing out, PHP crashing mid-request, or nginx running out of connections.
 - **Traffic spikes:** a site getting 3,000 or more requests in a minute, or ten times its usual traffic, with the top addresses, paths and user agents, so you can tell an attack from a busy day.
 - **Brute force:** one address trying to log in 60 or more times a minute on `wp-login.php` or `xmlrpc.php`.
+- **Worth a look:** database errors with their query, a full disk, missing files or libraries, broken regexes, PHP settings blocking a function or a path, and certificates that don't match the domain.
 
 One install covers the whole server. Nothing goes into WordPress, and the sites never see the Log Central token.
 
@@ -57,12 +58,19 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 | A flood or DDoS the site handles: 3,000+ requests a minute, or 10× its usual traffic | `traffic`, with the top IPs, paths, user agents and status codes |
 | 60+ login attempts a minute from one address | `security`, naming the address |
 | A scanner sending a broken request to the REST batch endpoint, which trips a WordPress core bug | `security`, naming the address |
+| A WordPress database error, like a missing table or unknown column | `database`, with the error, the full query and the functions that ran it |
+| An `XPATH syntax error`: SQL injection that reached the database | `security`, with the query, so the vulnerable plugin can be found |
+| No space left on the disk | `server` |
+| A certificate that doesn't match the domain | `server` |
+| A missing file or library, a broken regex, a file PHP can't write, or something the PHP settings block | `php`, named after the plugin or theme |
+
+Rows below the first four are sent at most once an hour per site and problem, and at most 120 a minute per server.
 
 **🔇 Ignored on purpose**
 
 | Problem | Why |
 |---|---|
-| PHP warnings, notices and deprecations | Too noisy, and they don't break the page |
+| Other PHP warnings, notices and deprecations, like undefined array keys | Too noisy, and they don't break the page |
 | Bots opening WordPress files directly | The site isn't broken |
 | A single 5xx response now and then | Mostly bots probing paths that don't exist. A timeout or PHP crash behind it is still reported |
 

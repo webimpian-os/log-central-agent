@@ -9,7 +9,9 @@ transforms:
       raw = string!(.message)
       fatal = contains(raw, "PHP Fatal error:") || contains(raw, "PHP Parse error:")
       server = !contains(raw, "FastCGI sent in stderr") && match(raw, r'upstream|worker_connections|AH010(?:67|75|79)')
-      if !fatal && !server { abort }
+      # Keep in sync with notable_messages.
+      notable = match(raw, r'(?i)No space left on device|out of free disk space|WordPress database error|has been disabled for security reasons|open_basedir restriction|failed to open stream: (?:Permission denied|No such file)|preg_\w+\(\): (?:Unknown modifier|Compilation failed|No ending delimiter|Delimiter must not)|library not found|missing \w+ library|does NOT include an ID which matches|\(13: Permission denied\)')
+      if !fatal && !server && !notable { abort }
 
       host = string(.host) ?? "unknown"
       log_path = string(.file) ?? ""
@@ -32,6 +34,7 @@ transforms:
       }
 
       .host = host
+      .notable = notable
       .site_key = host + "/" + name
       .site_label = name
       .site_url = ""
@@ -319,6 +322,161 @@ transforms:
         "hostname": string!(.host),
         "throttle_key": md5(string!(.site_key) + "|" + exception)
       }
+
+  notable_messages:
+    type: remap
+    inputs: [error_lines]
+    drop_on_abort: true
+    drop_on_error: true
+    source: |
+      if .notable != true { abort }
+      raw = string!(.message)
+      time = null
+      client = ""
+      referrer = ""
+      method = "-"
+      path = ""
+      body = ""
+      from_php = false
+      escaped = false
+
+      if starts_with(raw, "[") {
+        entry = parse_regex(raw, r'^\[(?P<time>\w{3} \w{3} \d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? \d{4})\] \[[\w-]+:\w+\] (?P<rest>.*)$') ?? null
+        if entry == null { abort }
+        time = parse_timestamp!(string!(entry.time), "%a %b %d %H:%M:%S%.f %Y")
+        rest = string!(entry.rest)
+        found = parse_regex(rest, r'\[client (?P<v>[^\]]+)\]') ?? {}
+        client = replace(string(found.v) ?? "", r':\d+$', "")
+        found = parse_regex(rest, r', referer: (?P<v>[^,]*)$') ?? {}
+        referrer = string(found.v) ?? ""
+        found = parse_regex(rest, r'AH01071: Got error \'(?P<v>.*)\'(?:, referer: .*)?$') ?? {}
+        body = string(found.v) ?? ""
+        from_php = body != ""
+        escaped = from_php
+        if !from_php {
+          body = replace(rest, r'\[(?:pid|client) [^\]]*\] ', "")
+          body = replace(body, r', referer: [^,]*$', "")
+        }
+      } else {
+        stderr = parse_regex(raw, r'(?s)^(?P<time>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[\w+\] \d+#\d+: (?:\*\d+ )?FastCGI sent in stderr: "(?P<body>.*?)(?:" while (?P<context>[^\n]*))?$') ?? null
+        plain = parse_regex(raw, r'^(?P<time>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[\w+\] \d+#\d+: (?:\*\d+ )?(?P<body>.*?)(?:, client: (?P<context>.*))?$') ?? null
+        entry = if stderr != null { stderr } else { plain }
+        if entry == null { abort }
+        from_php = stderr != null
+        time = parse_timestamp!(string!(entry.time), "%Y/%m/%d %H:%M:%S")
+        body = string!(entry.body)
+        context = string(entry.context) ?? ""
+        if !from_php { context = "client: " + context }
+        found = parse_regex(context, r'client: (?P<v>[^,]+)') ?? {}
+        client = string(found.v) ?? ""
+        found = parse_regex(context, r'request: "(?P<method>[A-Z]+) (?P<path>[^ "?]*)') ?? {}
+        method = string(found.method) ?? "-"
+        path = string(found.path) ?? ""
+        found = parse_regex(context, r'referrer: "(?P<v>[^"]*)"') ?? {}
+        referrer = string(found.v) ?? ""
+      }
+      # A first install reads whole logs; skip old lines.
+      if to_unix_timestamp(time) < to_unix_timestamp(now()) - 86400 { abort }
+      if escaped {
+        body = replace_with(body, r'\\(.)') -> |escape| {
+          char = string!(escape.captures[0])
+          if char == "n" { "\n" } else if char == "t" { "\t" } else { char }
+        }
+      }
+
+      url = string!(.site_url)
+      if url != "" && path != "" { url = url + path }
+      site_key = string!(.site_key)
+      label = "[" + string!(.site_label) + "] "
+      parts = if from_php { split(body, "PHP message: ") } else { [body] }
+      rows = []
+
+      for_each(parts) -> |_index, part| {
+        part = replace(strip_whitespace(string(part) ?? ""), r';$', "")
+        prefix = parse_regex(part, r'(?s)^PHP (?:Warning|Notice|Deprecated|Recoverable fatal error):\s+(?P<text>.*)$') ?? null
+        warning = prefix != null
+        text = if warning { string!(prefix.text) } else { part }
+        text = replace(text, r'/home/[^/\s]+/webapps/[^/\s]+/', "")
+        text = replace(text, r'/var/www/vhosts/(?:system/)?[^/\s]+/', "")
+        kind = ""
+        channel = "php"
+        level = "warning"
+        extra = {}
+        shape = ""
+
+        if part == "" || starts_with(part, "PHP Fatal error") || starts_with(part, "PHP Parse error") {
+          kind = ""
+        } else if contains(text, "No space left on device") || contains(text, "out of free disk space") {
+          kind = "Disk full"
+          channel = "server"
+        } else if contains(text, "does NOT include an ID which matches the server name") {
+          kind = "SSL certificate mismatch"
+          channel = "server"
+          level = "notice"
+          found = parse_regex(text, r'AH01909: (?P<v>[^:\s]+)') ?? {}
+          shape = string(found.v) ?? ""
+        } else if starts_with(text, "WordPress database error ") {
+          db = parse_regex(text, r'(?s)^WordPress database error (?P<error>.*?)(?: for query (?P<query>.*?))?(?: made by (?P<caller>.*))?$') ?? {}
+          error = string(db.error) ?? text
+          extra = {"error": error, "query": string(db.query) ?? "", "made_by": string(db.caller) ?? ""}
+          # Injected EXTRACTVALUE/UPDATEXML payloads surface as XPATH errors.
+          if contains(error, "XPATH syntax error") {
+            kind = "SQL injection reached the database"
+            channel = "security"
+          } else {
+            kind = "Database error"
+            channel = "database"
+          }
+          shape = replace(error, r'(Duplicate entry|XPATH syntax error:?|syntax to use near) \'[^\']*\'', "$1 '…'")
+          text = error
+        } else if warning && contains(text, "has been disabled for security reasons") {
+          kind = "Disabled PHP function"
+          level = "notice"
+        } else if warning && contains(text, "open_basedir restriction in effect") {
+          kind = "open_basedir blocked a file"
+        } else if warning && match(text, r'(?i)failed to open stream: Permission denied') {
+          kind = "Permission denied"
+        } else if warning && match(text, r'(?i)^(?:include|require)(?:_once)?\(.*\): Failed to open stream: No such file or directory') {
+          kind = "Missing file"
+        } else if warning && match(text, r'^preg_\w+\(\): (?:Unknown modifier|Compilation failed|No ending delimiter|Delimiter must not)') {
+          kind = "Broken regex"
+        } else if !warning && match(text, r'(?i)library not found|missing \w+ library') {
+          kind = "Missing library"
+        } else if !warning && contains(text, "(13: Permission denied)") {
+          kind = "Permission denied"
+          channel = "server"
+        }
+
+        if kind != "" {
+          culprit = ""
+          location = parse_regex(text, r' in (?P<file>\S+?)(?: : eval\(\)\'d code)? on line (?P<line>\d+)') ?? null
+          if location != null {
+            owner = parse_regex(string!(location.file), r'(?:^|/)wp-content/(?P<kind>plugins|mu-plugins|themes)/(?P<name>[^/\s(:]+)') ?? null
+            if owner != null {
+              suffix = " plugin: "
+              if owner.kind == "themes" { suffix = " theme: " } else if owner.kind == "mu-plugins" { suffix = " mu-plugin: " }
+              culprit = replace(string!(owner.name), r'\.php$', "") + suffix
+            }
+            if shape == "" { shape = string!(location.file) + ":" + string!(location.line) }
+          }
+          if shape == "" { shape = truncate(text, 200) }
+          summary = truncate(string!(split(text, "\n")[0]), 300)
+          rows = push(rows, {
+            "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
+            "app": "SECRET[settings.app]",
+            "environment": "production",
+            "channel": channel,
+            "level": level,
+            "message": label + culprit + kind + ": " + summary,
+            "context": encode_json(merge({"kind": kind, "url": url, "method": method, "ip": client, "referrer": referrer, "detail": text}, extra)),
+            "hostname": string!(.host),
+            "throttle_key": md5(site_key + "|" + kind + "|" + replace(shape, r'\d+', "N"))
+          })
+        }
+      }
+
+      if length(rows) == 0 { abort }
+      . = rows
 
   requests:
     type: remap
@@ -635,6 +793,20 @@ transforms:
     threshold: 5
     window_secs: 300
 
+  notable_cap:
+    type: throttle
+    inputs: [notable_messages]
+    key_field: "{{ throttle_key }}"
+    threshold: 1
+    window_secs: 3600
+
+  # Many different warnings at once can't swamp Log Central.
+  notable_flood_cap:
+    type: throttle
+    inputs: [notable_cap]
+    threshold: 120
+    window_secs: 60
+
 sinks:
   log_central:
     type: http
@@ -663,7 +835,7 @@ sinks:
   # The Logs page never alerts.
   log_central_logs:
     type: http
-    inputs: [server_error_cap, traffic_split.logs]
+    inputs: [server_error_cap, traffic_split.logs, notable_flood_cap]
     uri: "SECRET[settings.url]/api/logs"
     method: post
     encoding:

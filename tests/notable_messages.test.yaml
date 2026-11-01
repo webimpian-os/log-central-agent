@@ -1,0 +1,229 @@
+tests:
+  - name: a WordPress database error keeps the error, the query and the callers
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: WordPress database error Table 'wp_cart_history' doesn't exist for query SELECT * FROM wp_cart_history WHERE session = 'abc' made by do_action('wp_ajax_save'), WP_Hook->do_action, Acme_Cart->save', referer: https://bakery.test/cart/"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "database")
+              assert_eq!(.level, "warning")
+              assert_eq!(.message, "[bakery.test] Database error: Table 'wp_cart_history' doesn't exist")
+              assert_eq!(.throttle_key, md5("bakery.test|Database error|Table 'wp_cart_history' doesn't exist"))
+              context = parse_json!(.context)
+              assert_eq!(context.kind, "Database error")
+              assert_eq!(context.error, "Table 'wp_cart_history' doesn't exist")
+              assert_eq!(context.query, "SELECT * FROM wp_cart_history WHERE session = 'abc'")
+              assert_eq!(context.made_by, "do_action('wp_ajax_save'), WP_Hook->do_action, Acme_Cart->save")
+              assert_eq!(context.ip, "203.0.113.9")
+              assert_eq!(context.referrer, "https://bakery.test/cart/")
+              assert_eq!(.hostname, "web-01")
+              assert_eq!(.app, "wordpress-sites")
+
+  - name: an XPATH error is SQL injection reaching the database
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.66:0] AH01071: Got error 'PHP message: WordPress database error XPATH syntax error: '~10.6.18-MariaDB' for query SELECT * FROM wp_posts WHERE ID = 1 AND EXTRACTVALUE(1,CONCAT(0x7e,VERSION())) made by require('wp-blog-header.php'), Acme_Search->find'"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "security")
+              assert_eq!(.message, "[bakery.test] SQL injection reached the database: XPATH syntax error: '~10.6.18-MariaDB'")
+              assert_eq!(.throttle_key, md5("bakery.test|SQL injection reached the database|XPATH syntax error: '…'"))
+              context = parse_json!(.context)
+              assert!(contains(string!(context.query), "EXTRACTVALUE(1,CONCAT(0x7e,VERSION()))"))
+              assert_eq!(context.made_by, "require('wp-blog-header.php'), Acme_Search->find")
+
+  - name: a missing include names the plugin and hides server paths
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/error_log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Warning:  include_once(/var/www/vhosts/shop.test/httpdocs/wp-content/plugins/acme/inc/extra.php): Failed to open stream: No such file or directory in /var/www/vhosts/shop.test/httpdocs/wp-content/plugins/acme/acme.php on line 12'"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "php")
+              assert_eq!(.level, "warning")
+              assert_eq!(.message, "[shop.test] acme plugin: Missing file: include_once(httpdocs/wp-content/plugins/acme/inc/extra.php): Failed to open stream: No such file or directory in httpdocs/wp-content/plugins/acme/acme.php on line 12")
+              assert_eq!(.throttle_key, md5("shop.test|Missing file|httpdocs/wp-content/plugins/acme/acme.php:N"))
+              assert!(!contains(string!(.context), "/var/www"))
+
+  - name: a broken regex is kept and the noise beside it is not
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Warning:  Attempt to read property \\\"ID\\\" on null in /home/bakery/webapps/bakery/public/wp-content/plugins/acme/a.php on line 5PHP message: PHP Warning:  preg_match(): Unknown modifier 'd' in /home/bakery/webapps/bakery/public/wp-content/themes/acme-child/functions.php on line 88'"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[bakery.test] acme-child theme: Broken regex: preg_match(): Unknown modifier 'd' in public/wp-content/themes/acme-child/functions.php on line 88")
+              assert_eq!(.channel, "php")
+
+  - name: PHP settings problems are logged
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/error_log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Warning:  ignore_user_abort() has been disabled for security reasons in /var/www/vhosts/shop.test/httpdocs/wp-cron.php on line 19PHP message: PHP Warning:  Unknown: open_basedir restriction in effect. File(/var/cpanel/php/sessions/ea-php74) is not within the allowed path(s): (/var/www/vhosts/shop.test/:/tmp/) in Unknown on line 0PHP message: PHP Warning:  file_put_contents(/var/www/vhosts/shop.test/httpdocs/wp-content/cache/page.html): Failed to open stream: Permission denied in /var/www/vhosts/shop.test/httpdocs/wp-content/plugins/fast-cache/cache.php on line 40'"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              context = parse_json!(.context)
+              assert!(includes(["Disabled PHP function", "open_basedir blocked a file", "Permission denied"], context.kind))
+              if context.kind == "Disabled PHP function" {
+                assert_eq!(.level, "notice")
+                assert_eq!(.message, "[shop.test] Disabled PHP function: ignore_user_abort() has been disabled for security reasons in httpdocs/wp-cron.php on line 19")
+              }
+              if context.kind == "Permission denied" {
+                assert_eq!(.message, "[shop.test] fast-cache plugin: Permission denied: file_put_contents(httpdocs/wp-content/cache/page.html): Failed to open stream: Permission denied in httpdocs/wp-content/plugins/fast-cache/cache.php on line 40")
+              }
+              true
+
+  - name: a plugin missing its library is logged
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/error_log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: Exception: Predis library not found. Re-install Redis Cache plugin or delete object-cache.php. in /var/www/vhosts/shop.test/httpdocs/wp-content/plugins/redis-cache/includes/object-cache.php:115'"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "php")
+              assert_eq!(.message, "[shop.test] Missing library: Exception: Predis library not found. Re-install Redis Cache plugin or delete object-cache.php. in httpdocs/wp-content/plugins/redis-cache/includes/object-cache.php:115")
+
+  - name: Apache failing to write because the disk is full
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/error_log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [log_config:warn] [pid 621815:tid 139906923874048] (28)No space left on device: [client 203.0.113.9:0] AH00646: Error writing to /var/www/vhosts/system/shop.test/logs/access_ssl_log"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "server")
+              assert_eq!(.level, "warning")
+              assert_eq!(.message, "[shop.test] Disk full: (28)No space left on device: AH00646: Error writing to logs/access_ssl_log")
+              assert_eq!(.throttle_key, md5("shop.test|Disk full|(N)No space left on device: AHN: Error writing to logs/access_ssl_log"))
+
+  - name: nginx failing to write because the disk is full keeps the request
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_error_log",
+            "message": format_timestamp!(now(), "%Y/%m/%d %H:%M:%S") + " [crit] 12#0: *5 pwrite() \"/var/cache/nginx/fastcgi_temp/1/00/0000000001\" failed (28: No space left on device), client: 203.0.113.9, server: shop.test, request: \"POST /wp-admin/async-upload.php HTTP/1.1\", host: \"shop.test\""
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "server")
+              assert!(starts_with(string!(.message), "[shop.test] Disk full: pwrite()"))
+              context = parse_json!(.context)
+              assert_eq!(context.method, "POST")
+              assert_eq!(context.url, "https://shop.test/wp-admin/async-upload.php")
+              assert_eq!(context.ip, "203.0.113.9")
+
+  - name: a certificate that doesn't match the domain is a notice
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/error_log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [ssl:warn] [pid 1:tid 2] AH01909: client.shop.test:443:0 server certificate does NOT include an ID which matches the server name"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "server")
+              assert_eq!(.level, "notice")
+              assert_eq!(.throttle_key, md5("shop.test|SSL certificate mismatch|client.shop.test"))
+
+  - name: plain PHP warnings are noise
+    no_outputs_from: [notable_messages]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Warning:  Undefined array key \\\"id\\\" in /home/bakery/webapps/bakery/public/wp-content/plugins/acme/a.php on line 9PHP message: [WARNING] Ability meta key \\\"x\\\" is deprecated.'"
+          }
+
+  - name: a fatal is left to the error page
+    no_outputs_from: [notable_messages]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Exception: Predis library not found in /home/bakery/webapps/bakery/public/wp-content/object-cache.php:10\\nStack trace:\\n#0 {main}\\n  thrown in /home/bakery/webapps/bakery/public/wp-content/object-cache.php on line 10'"
+          }
+
+  - name: a first install skips old lines
+    no_outputs_from: [notable_messages]
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-02
+          file: /var/www/vhosts/system/shop.test/logs/error_log
+          message: "[Fri Aug 01 12:37:42.601837 2025] [log_config:warn] [pid 621815:tid 1] (28)No space left on device: [client 203.0.113.9:0] AH00646: Error writing to /var/www/vhosts/system/shop.test/logs/access_ssl_log"
