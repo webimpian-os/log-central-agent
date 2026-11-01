@@ -601,6 +601,7 @@ transforms:
   traffic_split:
     type: route
     inputs: [one_alert_per_site]
+    reroute_unmatched: false
     route:
       errors: '!exists(.channel)'
       logs: 'exists(.channel)'
