@@ -223,11 +223,11 @@ tests:
           host: web-02
           file: /var/www/vhosts/system/shop.test/logs/proxy_error_log
           message: |-
-            2026/10/31 15:11:03 [error] 469575#0: *593091 FastCGI sent in stderr: "PHP message: PHP Fatal error:  Uncaught Error: Call to undefined method WP_Error::get_method() in /var/www/vhosts/shop.test/httpdocs/wp-includes/rest-api/class-wp-rest-server.php:1054
+            2026/10/31 15:11:03 [error] 469575#0: *593091 FastCGI sent in stderr: "PHP message: PHP Fatal error:  Uncaught Error: Call to a member function get_price() on bool in /var/www/vhosts/shop.test/httpdocs/wp-content/plugins/demo-cart/cart.php:42
             Stack trace:
-            #0 /var/www/vhosts/shop.test/httpdocs/wp-includes/rest-api/class-wp-rest-server.php(1654): WP_REST_Server->match_request_to_handler()
-            #1 /var/www/vhosts/shop.test/httpdocs/wp-includes/rest-api/class-wp-rest-server.php(1193): WP_REST_Server->serve_batch_request_v1()
-            #2 /var/www/vhosts/shop.te" while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: "POST /wp-json/batch/v1?_locale=user HTTP/1.1", upstream: "fastcgi://unix:/var/www/vhosts/system/shop.test/php-fpm.sock:", host: "shop.test", referrer: "https://shop.test/wp-admin/post.php"
+            #0 /var/www/vhosts/shop.test/httpdocs/wp-includes/class-wp-hook.php(324): demo_cart_total()
+            #1 /var/www/vhosts/shop.test/httpdocs/wp-includes/plugin.php(205): WP_Hook->apply_filters()
+            #2 /var/www/vhosts/shop.te" while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: "POST /cart/?_locale=user HTTP/1.1", upstream: "fastcgi://unix:/var/www/vhosts/system/shop.test/php-fpm.sock:", host: "shop.test", referrer: "https://shop.test/shop/"
     outputs:
       - extract_from: php_fatals
         conditions:
@@ -235,16 +235,16 @@ tests:
             source: |
               assert_eq!(.timestamp, "2026-10-31 07:11:03.000")
               assert_eq!(.exception, "Error")
-              assert_eq!(.message, "[shop.test] Call to undefined method WP_Error::get_method()")
-              assert_eq!(.file, "httpdocs/wp-includes/rest-api/class-wp-rest-server.php")
-              assert_eq!(.line, 1054)
-              assert_eq!(.trace, "#0 httpdocs/wp-includes/rest-api/class-wp-rest-server.php(1654): WP_REST_Server->match_request_to_handler()\n#1 httpdocs/wp-includes/rest-api/class-wp-rest-server.php(1193): WP_REST_Server->serve_batch_request_v1()\n#2 ...")
-              assert_eq!(.url, "https://shop.test/wp-json/batch/v1")
+              assert_eq!(.message, "[shop.test] demo-cart plugin: Call to a member function get_price() on bool")
+              assert_eq!(.file, "httpdocs/wp-content/plugins/demo-cart/cart.php")
+              assert_eq!(.line, 42)
+              assert_eq!(.trace, "#0 httpdocs/wp-includes/class-wp-hook.php(324): demo_cart_total()\n#1 httpdocs/wp-includes/plugin.php(205): WP_Hook->apply_filters()\n#2 ...")
+              assert_eq!(.url, "https://shop.test/cart/")
               assert_eq!(.method, "POST")
               assert_eq!(.ip, "203.0.113.9")
-              assert_eq!(.referrer, "https://shop.test/wp-admin/post.php")
+              assert_eq!(.referrer, "https://shop.test/shop/")
               assert_eq!(.hostname, "web-02")
-              assert_eq!(.fingerprint, md5("shop.test|Error|httpdocs/wp-includes/rest-api/class-wp-rest-server.php|1054"))
+              assert_eq!(.fingerprint, md5("shop.test|Error|httpdocs/wp-content/plugins/demo-cart/cart.php|42"))
 
   - name: nginx entry with quotes, raw backslashes and a full trace
     inputs:
@@ -514,6 +514,32 @@ tests:
               assert_eq!(context.kind, "Scanner probe")
               assert_eq!(context.ip, "203.0.113.9")
               assert_eq!(context.detail, "Call to undefined method WP_Error::set_url_params()")
+
+  - name: a scanner tripping the same bug through another method is logged too
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-02
+          file: /var/www/vhosts/system/shop.test/logs/proxy_error_log
+          message: |-
+            2026/10/31 15:11:03 [error] 469575#0: *593091 FastCGI sent in stderr: "PHP message: PHP Fatal error:  Uncaught Error: Call to undefined method WP_Error::get_method() in /var/www/vhosts/shop.test/httpdocs/wp-includes/rest-api/class-wp-rest-server.php:1054
+            Stack trace:
+            #0 /var/www/vhosts/shop.test/httpdocs/wp-includes/rest-api/class-wp-rest-server.php(1654): WP_REST_Server->match_request_to_handler()
+            #1 /var/www/vhosts/shop.test/httpdocs/wp-includes/rest-api/class-wp-rest-server.php(1193): WP_REST_Server->serve_batch_request_v1()
+            #2 /var/www/vhosts/shop.te" while reading response header from upstream, client: 203.0.113.9, server: shop.test, request: "POST /wp-json/batch/v1?_locale=user HTTP/1.1", upstream: "fastcgi://unix:/var/www/vhosts/system/shop.test/php-fpm.sock:", host: "shop.test"
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "security")
+              assert_eq!(.message, "[shop.test] A scanner sent a broken REST batch request from 203.0.113.9")
+              assert_eq!(.throttle_key, md5("shop.test|Scanner probe"))
+              assert!(!exists(.fingerprint))
+              context = parse_json!(.context)
+              assert_eq!(context.url, "https://shop.test/wp-json/batch/v1")
+              assert_eq!(context.detail, "Call to undefined method WP_Error::get_method()")
 
   - name: PHP errors go to Errors and scanner probes to Logs
     inputs:

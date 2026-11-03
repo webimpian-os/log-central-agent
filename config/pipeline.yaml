@@ -138,7 +138,7 @@ transforms:
       probe = ""
       if contains(message, "ABSPATH") || (trace == "#0 {main}" && match(file, r'(?:^|/)wp-(?:content|includes|admin/includes)/')) {
         probe = "Bot opening WordPress files"
-      } else if contains(message, "WP_Error::set_url_params()") && contains(trace, "serve_batch_request_v1") {
+      } else if contains(message, "WP_Error::") && contains(trace, "serve_batch_request_v1") {
         probe = "Scanner probe"
       }
 
