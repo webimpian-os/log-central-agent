@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AGENT_VERSION="${AGENT_VERSION:-v1.4.0}"
+AGENT_VERSION="${AGENT_VERSION:-v1.4.1}"
 REPO="webimpian-os/log-central-agent"
 VECTOR_VERSION="0.61.0"
 
