@@ -87,6 +87,7 @@ one_minute() {
     } > "$(site_log "$home" demoshop)"
     { repeat 8 bakery 203.0.113.9 502 / "$time"; repeat 2 bakery 203.0.113.9 200 /about/ "$time"; } > "$(site_log "$home" bakery)"
     { repeat 20 quiet 203.0.113.9 200 / "$time"; repeat 2 quiet 203.0.113.9 500 /broken/ "$time"; } > "$(site_log "$home" quiet)"
+    { repeat 8 scanned 203.0.113.70 500 /wp-json/batch/v1 "$time" POST; repeat 2 scanned 203.0.113.9 200 / "$time"; } > "$(site_log "$home" scanned)"
     repeat 100 login 203.0.113.66 200 /wp-login.php "$time" POST > "$(site_log "$home" login)"
     repeat 4000 stale 203.0.113.9 200 / "$old" > "$(site_log "$home" stale)"
 }
@@ -110,6 +111,7 @@ grep -q '"message":"\[bakery.test\] 8 of 10 requests got a server error in one m
 grep -q '"message":"\[login.test\] 100 login attempts in one minute from 203.0.113.66"' "$alerts" \
     || fail "missing the brute force attack" "$alerts"
 ! grep -q 'quiet\|stale\|warmup' "$alerts" || fail "alerted on a quiet site or old traffic" "$alerts"
+! grep -q 'scanned' "$alerts" || fail "a scanner on the REST batch endpoint looked like a failing site" "$alerts"
 [ "$(wc -l < "$alerts")" -eq 3 ] || fail "expected exactly 3 alerts" "$alerts"
 
 # Minutes become seconds so a site's usual traffic is learnt quickly.

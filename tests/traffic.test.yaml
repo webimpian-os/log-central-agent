@@ -246,6 +246,31 @@ tests:
             source: |
               assert_eq!(.login, .ip == "203.0.113.66")
 
+  - name: requests to the REST batch endpoint are marked as scanner traffic
+    inputs:
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_access_ssl_log",
+            "message": "203.0.113.70 - - [" + format_timestamp!(now(), "%d/%b/%Y:%H:%M:%S %z") + "] \"POST /wp-json/batch/v1?_locale=user HTTP/1.1\" 500 0 \"-\" \"Mozilla/5.0\""
+          }
+      - insert_at: requests
+        type: vrl
+        source: |
+          . = {
+            "host": "web-02",
+            "file": "/var/www/vhosts/system/shop.test/logs/proxy_access_ssl_log",
+            "message": "203.0.113.71 - - [" + format_timestamp!(now(), "%d/%b/%Y:%H:%M:%S %z") + "] \"GET /wp-json/wp/v2/posts HTTP/1.1\" 500 0 \"-\" \"Mozilla/5.0\""
+          }
+    outputs:
+      - extract_from: requests
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.scanner, .ip == "203.0.113.70")
+
   - name: one address hammering the login page is a brute force attack
     inputs:
       - insert_at: traffic_alerts

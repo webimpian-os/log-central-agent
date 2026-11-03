@@ -73,6 +73,7 @@ Rows below the first three are sent at most once an hour per site and problem, a
 |---|---|
 | Other PHP warnings, notices and deprecations, like undefined array keys | Too noisy, and they don't break the page |
 | A single 5xx response now and then | Mostly bots probing paths that don't exist. A timeout or PHP crash behind it is still reported |
+| 5xx responses on the REST batch endpoint, `/wp-json/batch/v1` | Scanners break it on purpose, so they don't make a site look like it's failing. The scanner is still logged under `security` |
 
 **❌ Not covered**
 

@@ -536,7 +536,8 @@ transforms:
         "ip": ip,
         "path": truncate(path, 200),
         "agent": truncate(string!(entry.agent), 200),
-        "login": method == "POST" && (ends_with(path, "/wp-login.php") || ends_with(path, "/xmlrpc.php"))
+        "login": method == "POST" && (ends_with(path, "/wp-login.php") || ends_with(path, "/xmlrpc.php")),
+        "scanner": match(path, r'/wp-json/batch/v1/?$')
       }
 
   traffic:
@@ -614,7 +615,8 @@ transforms:
         tally(site.ips, log.ip)
         tally(site.paths, log.path)
         tally(site.agents, log.agent)
-        if log.status >= 500 then
+        -- Scanners crash the REST batch endpoint on purpose; the site itself is fine.
+        if log.status >= 500 and not log.scanner then
           site.server_errors = site.server_errors + 1
           tally(site.error_paths, log.path)
         end
