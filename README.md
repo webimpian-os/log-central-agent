@@ -143,7 +143,7 @@ curl -fsSL https://github.com/webimpian-os/log-central-agent/releases/latest/dow
 | Risk | Protection |
 |---|---|
 | High CPU | Capped at half of one core, at the lowest priority, so PHP and MySQL always come first. Under load it falls behind and catches up later |
-| Out of memory | Capped at 256 MB, with fixed limits on what it remembers during a flood. If it goes over, only the agent is restarted, never the sites |
+| Out of memory | Capped at 256 MB, even during a flood. Over the cap, only the agent restarts. If the server runs low, the kernel stops the agent before any site |
 | Disk full | Writes only a few KB. Its own logging is rate-limited |
 | Log Central down | Stops reading and waits. Unsent errors stay in the log files and are sent once Log Central is back |
 | Agent restart or crash | Picks up where Log Central last confirmed, so nothing is lost. A backlog is never counted as a traffic spike |

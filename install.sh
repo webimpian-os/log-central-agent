@@ -258,7 +258,7 @@ if ! systemctl is-active --quiet "$SERVICE"; then
 fi
 
 enforced_limits() {
-    local memory cpu pid nice
+    local memory cpu pid nice oom
     if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
         memory="$(cat "/sys/fs/cgroup/system.slice/$SERVICE/memory.max" 2>/dev/null)"
         cpu="$(cut -d ' ' -f 1 "/sys/fs/cgroup/system.slice/$SERVICE/cpu.max" 2>/dev/null)"
@@ -268,11 +268,12 @@ enforced_limits() {
     fi
     pid="$(systemctl show -p MainPID --value "$SERVICE")"
     nice="$(ps -o ni= -p "$pid" 2>/dev/null | tr -d ' ')"
-    echo "    memory limit: ${memory:-?} bytes, CPU quota: ${cpu:-?}/100000, nice: ${nice:-?}"
-    [ "$memory" = "268435456" ] && [ "$cpu" = "50000" ] && [ "$nice" = "19" ]
+    oom="$(cat "/proc/$pid/oom_score_adj" 2>/dev/null)"
+    echo "    memory limit: ${memory:-?} bytes, CPU quota: ${cpu:-?}/100000, nice: ${nice:-?}, OOM score: ${oom:-?}"
+    [ "$memory" = "268435456" ] && [ "$cpu" = "50000" ] && [ "$nice" = "19" ] && [ "$oom" = "1000" ]
 }
 
-enforced_limits || stop_and_fail "the kernel is not enforcing the CPU/memory limits, so the agent was stopped"
+enforced_limits || stop_and_fail "the kernel is not enforcing the CPU, memory or OOM limits, so the agent was stopped"
 
 # Vector silently skips folders it can't read.
 sees_logs() {

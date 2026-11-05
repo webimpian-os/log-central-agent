@@ -32,6 +32,8 @@ CPUQuota=50%
 # MemoryLimit for cgroup v1, MemoryMax for v2.
 MemoryLimit=256M
 MemoryMax=256M
+# When the server runs out of memory, the kernel kills the agent before any site or database.
+OOMScoreAdjust=1000
 LimitNOFILE=65536
 LogRateLimitIntervalSec=60s
 LogRateLimitBurst=200
