@@ -109,12 +109,12 @@ transforms:
       line = 0
       trace = ""
 
-      uncaught = parse_regex(text, r'(?s)^PHP Fatal error:\s+Uncaught (?P<class>[^\s:]+): (?P<message>.*?) in (?P<file>\S+?):(?P<line>\d+)(?:\n(?P<rest>.*))?$') ?? null
+      uncaught = parse_regex(text, r'(?s)^PHP Fatal error:\s+Uncaught (?P<class>[^\s:]+): (?P<message>.*?) in (?P<file>\S+?(?:\(\d+\) : eval\(\)\'d code)?):(?P<line>\d+)(?:\n(?P<rest>.*))?$') ?? null
       if uncaught == null {
         # PHP 5 format.
         uncaught = parse_regex(text, r'(?s)^PHP Fatal error:\s+Uncaught exception \'(?P<class>[^\']+)\' with message \'(?P<message>.*?)\' in (?P<file>\S+?):(?P<line>\d+)(?:\n(?P<rest>.*))?$') ?? null
       }
-      plain = parse_regex(text, r'(?s)^PHP (?:Fatal|Parse) error:\s+(?P<message>.*) in (?P<file>\S+) on line (?P<line>\d+)') ?? null
+      plain = parse_regex(text, r'(?s)^PHP (?:Fatal|Parse) error:\s+(?P<message>.*) in (?P<file>\S+?(?:\(\d+\) : eval\(\)\'d code)?) on line (?P<line>\d+)') ?? null
 
       if uncaught != null {
         exception = string!(uncaught.class)
@@ -147,11 +147,16 @@ transforms:
       component = owner
       snippet = ""
       settled = false
+      in_eval = contains(file, "eval()'d code")
+      lines = trace
+      # A snippet that throws is named like one deeper in the trace.
+      if in_eval { lines = file + "\n" + trace }
+      frames = split(lines, "\n")
       # The first frame from other code is the caller that misused it; WordPress itself calling in means the owner broke.
-      for_each(split(trace, "\n")) -> |index, frame| {
+      for_each(frames) -> |index, frame| {
         if !settled {
           if contains(frame, "/code-snippets/") && contains(frame, "eval()'d code") {
-            next = string(get(split(trace, "\n"), [index + 1]) ?? "") ?? ""
+            next = string(get(frames, [index + 1]) ?? "") ?? ""
             callee = parse_regex(next, r'\): (?P<fn>[^\s()]+)\(\)$') ?? {}
             snippet = string(callee.fn) ?? ""
             snippet = if snippet == "" || snippet == "eval" { "code" } else { snippet + "()" }
@@ -186,6 +191,9 @@ transforms:
       site_key = string!(.site_key)
       url = string!(.site_url)
       if url != "" { url = url + path }
+      location = file + "|" + to_string(line)
+      # All snippets share one eval()'d file, so only the name tells them apart.
+      if in_eval { location = location + "|" + snippet }
 
       if probe != "" {
         sentence = if probe == "Scanner probe" { "A scanner sent a broken REST batch request" } else { "A bot opened " + file + " directly" }
@@ -203,7 +211,7 @@ transforms:
       } else {
         . = {
           "timestamp": format_timestamp!(time, "%Y-%m-%d %H:%M:%S%.3f", timezone: "UTC"),
-          "fingerprint": md5(site_key + "|" + exception + "|" + file + "|" + to_string(line)),
+          "fingerprint": md5(site_key + "|" + exception + "|" + location),
           "app": "SECRET[settings.app]",
           "environment": "production",
           "exception": exception,

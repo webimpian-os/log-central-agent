@@ -475,6 +475,45 @@ tests:
             source: |
               assert_eq!(.message, "[bakery.test] idod_delete_remaining_draft_orders() snippet: Call to a member function get_orders() on null")
 
+  - name: a snippet that throws is named by its function and grouped apart from other snippets
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/bakery/logs/apache2/bakery_error.log
+          message: |-
+            [Wed Nov 04 10:12:01.120000 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Uncaught Error: Call to undefined function get_field() in /home/bakery/webapps/bakery/public/wp-content/plugins/code-snippets/php/snippet-ops.php(582) : eval()'d code:11\nStack trace:\n#0 /home/bakery/webapps/bakery/public/wp-includes/shortcodes.php(433): acf_date_shortcode()\n#1 [internal function]: do_shortcode_tag()\n#2 /home/bakery/webapps/bakery/public/wp-includes/shortcodes.php(273): preg_replace_callback()\n#3 {main}\n  thrown in /home/bakery/webapps/bakery/public/wp-content/plugins/code-snippets/php/snippet-ops.php(582) : eval()'d code on line 11'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[bakery.test] acf_date_shortcode() snippet: Call to undefined function get_field()")
+              assert_eq!(.exception, "Error")
+              assert_eq!(.file, "public/wp-content/plugins/code-snippets/php/snippet-ops.php(582) : eval()'d code")
+              assert_eq!(.line, 11)
+              assert!(starts_with(string!(.trace), "#0 public/wp-includes/shortcodes.php(433): acf_date_shortcode()"))
+              assert_eq!(.fingerprint, md5("bakery.test|Error|public/wp-content/plugins/code-snippets/php/snippet-ops.php(582) : eval()'d code|11|acf_date_shortcode()"))
+
+  - name: a plain fatal inside a snippet keeps its file and line
+    inputs:
+      - insert_at: error_lines
+        type: log
+        log_fields:
+          host: web-01
+          file: /home/bakery/logs/apache2/bakery_error.log
+          message: |-
+            [Wed Nov 04 10:12:01.120000 2026] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Fatal error:  Allowed memory size of 268435456 bytes exhausted (tried to allocate 397312 bytes) in /home/bakery/webapps/bakery/public/wp-content/plugins/code-snippets/php/snippet-ops.php(582) : eval()'d code on line 5'
+    outputs:
+      - extract_from: php_fatals
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "[bakery.test] code snippet: Allowed memory size of 268435456 bytes exhausted (tried to allocate 397312 bytes)")
+              assert_eq!(.file, "public/wp-content/plugins/code-snippets/php/snippet-ops.php(582) : eval()'d code")
+              assert_eq!(.line, 5)
+
   - name: a plugin failing inside its own hook stays blamed when WordPress calls it
     inputs:
       - insert_at: error_lines
