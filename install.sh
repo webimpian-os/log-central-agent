@@ -213,6 +213,12 @@ if [ -f "$src/systemd/$panel.conf" ]; then
 else
     rm -f "$DROPIN_DIR/panel.conf"
 fi
+if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+    rm -f "$DROPIN_DIR/cgroup-v1.conf"
+else
+    install -d -m 0755 "$DROPIN_DIR"
+    install -m 0644 "$src/systemd/cgroup-v1.conf" "$DROPIN_DIR/cgroup-v1.conf"
+fi
 echo "$AGENT_VERSION" > "$PREFIX/VERSION"
 
 install -d -m 0755 "$ETC_DIR"

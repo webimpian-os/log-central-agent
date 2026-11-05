@@ -29,8 +29,7 @@ RestrictSUIDSGID=yes
 Nice=19
 IOSchedulingClass=idle
 CPUQuota=50%
-# MemoryLimit for cgroup v1, MemoryMax for v2.
-MemoryLimit=256M
+# cgroup v1 servers also get MemoryLimit= from the installer.
 MemoryMax=256M
 # When the server runs out of memory, the kernel kills the agent before any site or database.
 OOMScoreAdjust=1000
