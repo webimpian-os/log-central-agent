@@ -448,7 +448,8 @@ transforms:
           kind = "open_basedir blocked a file"
         } else if warning && match(text, r'(?i)failed to open stream: Permission denied') {
           kind = "Permission denied"
-        } else if warning && match(text, r'(?i)^(?:include|require)(?:_once)?\(.*\): Failed to open stream: No such file or directory') {
+        # A bot opening a WordPress file directly; the fatal after it is logged as the probe.
+        } else if warning && match(text, r'(?i)^(?:include|require)(?:_once)?\(.*\): Failed to open stream: No such file or directory') && !match(text, r'^\w+\((?:ABSPATH|WPINC)') {
           kind = "Missing file"
         } else if warning && match(text, r'^preg_\w+\(\): (?:Unknown modifier|Compilation failed|No ending delimiter|Delimiter must not)') {
           kind = "Broken regex"

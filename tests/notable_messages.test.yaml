@@ -129,6 +129,18 @@ tests:
               assert!(!contains(string!(.context), "/var/www"))
               assert_eq!(.persistent, true)
 
+  - name: a bot opening a WordPress file directly is not a missing file
+    no_outputs_from: [notable_messages]
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: PHP Warning:  require(ABSPATHWPINC/blocks/legacy-widget.php): failed to open stream: No such file or directory in /home/bakery/webapps/bakery/public/wp-includes/blocks/index.php on line 31PHP message: PHP Warning:  require(ABSPATHwp-includes/version.php): failed to open stream: No such file or directory in /home/bakery/webapps/bakery/public/wp-settings.php on line 33'"
+          }
+
   - name: a broken regex is kept and the noise beside it is not
     inputs:
       - insert_at: error_lines
