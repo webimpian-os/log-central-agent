@@ -27,6 +27,7 @@ tests:
               assert_eq!(context.referrer, "https://bakery.test/cart/")
               assert_eq!(.hostname, "web-01")
               assert_eq!(.app, "wordpress-sites")
+              assert_eq!(.persistent, false)
 
   - name: an XPATH error is SQL injection reaching the database
     inputs:
@@ -70,6 +71,7 @@ tests:
               assert_eq!(.message, "[shop.test] acme plugin: Missing file: include_once(httpdocs/wp-content/plugins/acme/inc/extra.php): Failed to open stream: No such file or directory in httpdocs/wp-content/plugins/acme/acme.php on line 12")
               assert_eq!(.throttle_key, md5("shop.test|Missing file|httpdocs/wp-content/plugins/acme/acme.php:N"))
               assert!(!contains(string!(.context), "/var/www"))
+              assert_eq!(.persistent, true)
 
   - name: a broken regex is kept and the noise beside it is not
     inputs:
@@ -106,6 +108,7 @@ tests:
             source: |
               context = parse_json!(.context)
               assert!(includes(["Disabled PHP function", "open_basedir blocked a file", "Permission denied"], context.kind))
+              assert_eq!(.persistent, true)
               if context.kind == "Disabled PHP function" {
                 assert_eq!(.level, "notice")
                 assert_eq!(.message, "[shop.test] Disabled PHP function: ignore_user_abort() has been disabled for security reasons in httpdocs/wp-cron.php on line 19")
@@ -151,6 +154,7 @@ tests:
               assert_eq!(.channel, "server")
               assert_eq!(.level, "warning")
               assert_eq!(.message, "[shop.test] Disk full: (28)No space left on device: AH00646: Error writing to logs/access_ssl_log")
+              assert_eq!(.persistent, false)
               assert_eq!(.throttle_key, md5("shop.test|Disk full|(N)No space left on device: AHN: Error writing to logs/access_ssl_log"))
 
   - name: nginx failing to write because the disk is full keeps the request
@@ -193,6 +197,7 @@ tests:
               assert_eq!(.channel, "server")
               assert_eq!(.level, "notice")
               assert_eq!(.throttle_key, md5("shop.test|SSL certificate mismatch|client.shop.test"))
+              assert_eq!(.persistent, true)
 
   - name: plain PHP warnings are noise
     no_outputs_from: [notable_messages]

@@ -481,7 +481,8 @@ transforms:
             "message": label + culprit + kind + ": " + summary,
             "context": encode_json(merge({"kind": kind, "url": url, "method": method, "ip": client, "referrer": referrer, "detail": text}, extra)),
             "hostname": string!(.host),
-            "throttle_key": md5(site_key + "|" + kind + "|" + replace(shape, r'\d+', "N"))
+            "throttle_key": md5(site_key + "|" + kind + "|" + replace(shape, r'\d+', "N")),
+            "persistent": channel == "php" || includes(["SSL certificate mismatch", "Permission denied"], kind)
           })
         }
       }
@@ -812,11 +813,21 @@ transforms:
     key_field: "{{ throttle_key }}"
     threshold: 1
     window_secs: 3600
+    exclude: '.persistent == true'
+
+  # Settings and code problems repeat on every request until someone fixes them.
+  persistent_cap:
+    type: throttle
+    inputs: [notable_cap]
+    key_field: "{{ throttle_key }}"
+    threshold: 1
+    window_secs: 21600
+    exclude: '.persistent != true'
 
   # Many different warnings at once can't swamp Log Central.
   notable_flood_cap:
     type: throttle
-    inputs: [notable_cap]
+    inputs: [persistent_cap]
     threshold: 120
     window_secs: 60
 
@@ -853,7 +864,7 @@ sinks:
     method: post
     encoding:
       codec: json
-      except_fields: [throttle_key]
+      except_fields: [throttle_key, persistent]
     auth:
       strategy: bearer
       token: "SECRET[settings.token]"

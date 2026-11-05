@@ -65,7 +65,7 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 | A certificate that doesn't match the domain | `server` |
 | A missing file or library, a broken regex, a file PHP can't write, or something the PHP settings block | `php`, named after the plugin or theme |
 
-Rows below the first three are sent at most once an hour per site and problem, and at most 120 a minute per server.
+Rows below the first three are sent once an hour per site and problem, and at most 120 a minute per server. `php` rows and certificate mismatches last until someone fixes them, so they repeat every 6 hours.
 
 **🔇 Ignored on purpose**
 
