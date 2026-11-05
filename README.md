@@ -60,7 +60,7 @@ For PHP errors, most of what the logs hold is noise. On one real server with 6 s
 | A scanner sending a broken request to the REST batch endpoint, which trips a WordPress core bug | `security`, naming the address |
 | A bot opening WordPress files directly, like `wp-includes/*.php` | `security`, naming the file and address |
 | A WordPress database error, like a missing table or unknown column | `database`, with the error, the full query and the functions that ran it |
-| An `XPATH syntax error`: SQL injection that reached the database | `security`, with the query, so the vulnerable plugin can be found |
+| SQL injection that reached the database: an `XPATH syntax error`, a `UNION` probing for the column count, or a query writing a file | `security`, with the query, so the vulnerable plugin can be found |
 | No space left on the disk | `server` |
 | A certificate that doesn't match the domain | `server` |
 | A missing file or library, a broken regex, a file PHP can't write, or something the PHP settings block | `php`, named after the plugin or theme |

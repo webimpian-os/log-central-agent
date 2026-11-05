@@ -429,9 +429,10 @@ transforms:
         } else if starts_with(text, "WordPress database error ") {
           db = parse_regex(text, r'(?s)^WordPress database error (?P<error>.*?)(?: for query (?P<query>.*?))?(?: made by (?P<caller>.*))?$') ?? {}
           error = string(db.error) ?? text
-          extra = {"error": error, "query": string(db.query) ?? "", "made_by": string(db.caller) ?? ""}
-          # Injected EXTRACTVALUE/UPDATEXML payloads surface as XPATH errors.
-          if contains(error, "XPATH syntax error") {
+          query = string(db.query) ?? ""
+          extra = {"error": error, "query": query, "made_by": string(db.caller) ?? ""}
+          # Signs an injected query reached MySQL: EXTRACTVALUE/UPDATEXML errors, UNION column probing, file writes.
+          if match(error, r'XPATH syntax error|SELECT statements have a different number of columns') || match(query, r'(?i)\binto\s+(?:out|dump)file\b|\bload_file\s*\(') {
             kind = "SQL injection reached the database"
             channel = "security"
           } else {

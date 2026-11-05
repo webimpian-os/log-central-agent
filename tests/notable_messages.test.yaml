@@ -51,6 +51,62 @@ tests:
               assert!(contains(string!(context.query), "EXTRACTVALUE(1,CONCAT(0x7e,VERSION()))"))
               assert_eq!(context.made_by, "require('wp-blog-header.php'), Acme_Search->find")
 
+  - name: a UNION probing for the column count is SQL injection reaching the database
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.66:0] AH01071: Got error 'PHP message: WordPress database error The used SELECT statements have a different number of columns for query SELECT SQL_CALC_FOUND_ROWS wp_posts.ID FROM wp_posts WHERE 1=1 AND wp_posts.post_author NOT IN (0) AND 1=0 UNION ALL SELECT 99999999,1 made by require('wp-blog-header.php'), WP_REST_Server->serve_batch_request_v1, WP_Query->get_posts'"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "security")
+              assert_eq!(.message, "[bakery.test] SQL injection reached the database: The used SELECT statements have a different number of columns")
+              assert_eq!(.persistent, false)
+              context = parse_json!(.context)
+              assert_eq!(context.ip, "203.0.113.66")
+
+  - name: a query writing a PHP file is SQL injection even when MySQL refuses it
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.66:0] AH01071: Got error 'PHP message: WordPress database error Access denied; you need (at least one of) the FILE privilege(s) for this operation for query SELECT wp_posts.ID FROM wp_posts WHERE 1=0 UNION ALL SELECT '<?php echo 1;' INTO DUMPFILE '/tmp/x.php'-- -) made by require('wp-blog-header.php'), WP_Query->get_posts'"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "security")
+              assert_eq!(.message, "[bakery.test] SQL injection reached the database: Access denied; you need (at least one of) the FILE privilege(s) for this operation")
+
+  - name: an import MySQL refuses the FILE privilege for is only a database error
+    inputs:
+      - insert_at: error_lines
+        type: vrl
+        source: |
+          . = {
+            "host": "web-01",
+            "file": "/home/bakery/logs/apache2/bakery_error.log",
+            "message": "[" + format_timestamp!(now(), "%a %b %d %H:%M:%S%.6f %Y") + "] [proxy_fcgi:error] [pid 1:tid 2] [client 203.0.113.9:0] AH01071: Got error 'PHP message: WordPress database error Access denied; you need (at least one of) the FILE privilege(s) for this operation for query LOAD DATA INFILE '/tmp/import.csv' INTO TABLE wp_imports made by Acme_Import->run'"
+          }
+    outputs:
+      - extract_from: notable_messages
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.channel, "database")
+
   - name: a missing include names the plugin and hides server paths
     inputs:
       - insert_at: error_lines
