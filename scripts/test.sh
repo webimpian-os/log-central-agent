@@ -10,10 +10,11 @@ for panel in config/panels/*.yaml; do
 done
 tests/refresh_sites.test.sh
 tests/patch_report.test.sh
+tests/wp_inventory.test.sh
 VECTOR="$vector" tests/traffic.test.sh
 
 if command -v shellcheck >/dev/null; then
-    shellcheck install.sh uninstall.sh php-log-limit.sh bin/refresh-sites bin/patch-report scripts/*.sh tests/*.sh
+    shellcheck install.sh uninstall.sh php-log-limit.sh bin/refresh-sites bin/patch-report bin/wp-inventory scripts/*.sh tests/*.sh
     echo "shellcheck ... passed"
 else
     echo "shellcheck ... skipped (not installed)"

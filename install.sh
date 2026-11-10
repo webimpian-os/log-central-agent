@@ -15,6 +15,7 @@ SERVICE="$NAME.service"
 TIMER="$NAME-sites.timer"
 RESTART_TIMER="$NAME-restart.timer"
 PATCHES_TIMER="$NAME-patches.timer"
+WORDPRESS_TIMER="$NAME-wordpress.timer"
 DROPIN_DIR="/etc/systemd/system/$SERVICE.d"
 
 say() { printf '==> %s\n' "$*"; }
@@ -206,9 +207,11 @@ install -m 0644 "$src/config/pipeline.yaml" "$src/config/runtime.yaml" "$PREFIX/
 install -m 0644 "$src/config/panels/$panel.yaml" "$PREFIX/config/panel.yaml"
 install -m 0755 "$src/bin/refresh-sites" "$PREFIX/bin/refresh-sites"
 install -m 0755 "$src/bin/patch-report" "$PREFIX/bin/patch-report"
+install -m 0755 "$src/bin/wp-inventory" "$PREFIX/bin/wp-inventory"
 install -m 0644 "$src/systemd/$NAME.service" "$src/systemd/$NAME-sites.service" "$src/systemd/$NAME-sites.timer" \
     "$src/systemd/$NAME-restart.service" "$src/systemd/$NAME-restart.timer" \
     "$src/systemd/$NAME-patches.service" "$src/systemd/$NAME-patches.timer" \
+    "$src/systemd/$NAME-wordpress.service" "$src/systemd/$NAME-wordpress.timer" \
     /etc/systemd/system/
 if [ -f "$src/systemd/$panel.conf" ]; then
     install -d -m 0755 "$DROPIN_DIR"
@@ -246,7 +249,7 @@ runuser -u "$SERVICE_USER" -- "$PREFIX/bin/vector" validate --no-environment --r
     "$PREFIX/config/pipeline.yaml" "$PREFIX/config/panel.yaml" "$PREFIX/config/runtime.yaml" >/dev/null \
     || fail "Vector rejected the configuration"
 
-units=("$SERVICE" "$RESTART_TIMER" "$PATCHES_TIMER")
+units=("$SERVICE" "$RESTART_TIMER" "$PATCHES_TIMER" "$WORDPRESS_TIMER")
 if [ "$panel" = "runcloud" ]; then
     units+=("$TIMER")
 fi
@@ -308,3 +311,7 @@ echo "    Follow it with: journalctl -u $SERVICE -f"
 
 say "Sending the first patch report"
 "$PREFIX/bin/patch-report" || echo "    The patch report failed. It is retried daily: journalctl -u $NAME-patches.service"
+
+# In the background: a server with many sites takes minutes to read.
+systemctl start --no-block "$NAME-wordpress.service"
+echo "    The WordPress versions of every site are being sent now: journalctl -u $NAME-wordpress.service"

@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+secrets_dir="${AGENT_SECRETS_DIR:-/etc/log-central-agent/secrets}"
+panel="${AGENT_PANEL:-$(cat /etc/log-central-agent/panel 2>/dev/null || true)}"
+sites_table="${AGENT_SITES_TABLE:-/var/lib/log-central-agent/sites.csv}"
+runcloud_home="${AGENT_RUNCLOUD_HOME:-/home}"
+plesk_vhosts="${AGENT_PLESK_VHOSTS:-/var/www/vhosts}"
+host="${AGENT_HOSTNAME:-$(uname -n)}"
+
+print_only=0
+[ "${1:-}" != "--print" ] || print_only=1
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+wordpress_roots() {
+    case "$panel" in
+        runcloud) find "$runcloud_home"/*/webapps -maxdepth 5 -path '*/wp-includes/version.php' 2>/dev/null ;;
+        plesk) find "$plesk_vhosts" -maxdepth 4 -path '*/wp-includes/version.php' -not -path "$plesk_vhosts/system/*" 2>/dev/null ;;
+    esac | sed 's|/wp-includes/version.php$||' | sort
+}
+
+# A site in the web root gets its domain; one in a deeper folder gets the folder added.
+site_name() {
+    local root="$1" site rest domain
+    case "$panel" in
+        runcloud)
+            rest="${root#*/webapps/}"
+            site="${rest%%/*}"
+            rest="${rest#"$site"}"
+            rest="${rest#/public}"
+            domain="$(awk -F, -v webapp="$site" '$1 == webapp { print $2; exit }' "$sites_table" 2>/dev/null || true)"
+            ;;
+        plesk)
+            rest="${root#"$plesk_vhosts"/}"
+            site="${rest%%/*}"
+            rest="${rest#"$site"}"
+            rest="${rest#/httpdocs}"
+            domain=""
+            # Plesk keeps each extra domain in a folder named after it.
+            if [[ "$rest" =~ ^/[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
+                site="${rest#/}"
+                rest=""
+            fi
+            ;;
+    esac
+    printf '%s%s' "${domain:-$site}" "$rest"
+}
+
+header() {
+    awk -v wanted="$1" '
+        FNR > 80 { nextfile }
+        {
+            line = $0
+            sub(/\r$/, "", line)
+            sub(/^[ \t\/*#@]*/, "", line)
+            if (tolower(substr(line, 1, length(wanted) + 1)) == tolower(wanted) ":") {
+                value = substr(line, length(wanted) + 2)
+                gsub(/^[ \t]+|[ \t]+$/, "", value)
+                if (value != "") { print FILENAME "\t" value; exit }
+            }
+        }
+    ' "${@:2}" 2>/dev/null || true
+}
+
+package() {
+    local name="$2" version="$3"
+    [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || return 0
+    [[ "$version" =~ ^[A-Za-z0-9.+_-]+$ ]] || return 0
+    printf '%s{"ecosystem":"%s","name":"%s","version":"%s"}' "$separator" "$1" "$name" "$version"
+    separator=","
+}
+
+json() {
+    printf '%s' "$1" | tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$/"/'
+}
+
+inventory() {
+    local root="$1" core entry main version slug separator=""
+    core="$(sed -n "s/^\$wp_version *= *['\"]\([^'\"]*\)['\"].*/\1/p" "$root/wp-includes/version.php" | head -n 1)"
+
+    printf '{"name":%s,"kind":"wordpress","hostname":%s,"path":%s,"runtime":{"wordpress":%s},"packages":[' \
+        "$(json "$(site_name "$root")")" "$(json "$host")" "$(json "$root")" "$(json "$core")"
+
+    package wordpress-core wordpress "$core"
+
+    for entry in "$root"/wp-content/plugins/*; do
+        if [ -d "$entry" ]; then
+            main="$(header 'Plugin Name' "$entry"/*.php | cut -f 1)"
+            slug="$(basename "$entry")"
+        elif [[ "$entry" == *.php ]]; then
+            main="$(header 'Plugin Name' "$entry" | cut -f 1)"
+            slug="$(basename "$entry" .php)"
+        else
+            continue
+        fi
+        [ -n "$main" ] || continue
+        version="$(header 'Version' "$main" | cut -f 2)"
+        package wordpress-plugin "$slug" "$version"
+    done
+
+    for entry in "$root"/wp-content/themes/*/style.css; do
+        [ -f "$entry" ] || continue
+        version="$(header 'Version' "$entry" | cut -f 2)"
+        package wordpress-theme "$(basename "$(dirname "$entry")")" "$version"
+    done
+
+    printf ']}\n'
+}
+
+wordpress_roots > "$work/roots"
+
+if [ "$print_only" -eq 1 ]; then
+    while IFS= read -r root; do inventory "$root"; done < "$work/roots"
+    exit 0
+fi
+
+url="$(cat "$secrets_dir/url")"
+token="$(cat "$secrets_dir/token")"
+sent=0
+failed=0
+
+while IFS= read -r root; do
+    inventory "$root" > "$work/payload.json"
+    status="$(printf 'Authorization: Bearer %s\n' "$token" \
+        | curl -sS -m 30 --retry 2 -H @- -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            --data-binary "@$work/payload.json" -o "$work/response" -w '%{http_code}' "$url/api/packages" || echo 000)"
+    if [ "$status" = "202" ]; then
+        sent=$((sent + 1))
+    else
+        failed=$((failed + 1))
+        echo "error: $root: $url/api/packages answered HTTP $status: $(head -c 300 "$work/response" 2>/dev/null)" >&2
+        # Without the endpoint every site fails the same way.
+        [ "$status" != "404" ] || break
+    fi
+done < "$work/roots"
+
+echo "sent $sent WordPress inventories to $url, $failed failed"
+[ "$failed" -eq 0 ]

@@ -86,7 +86,17 @@ Once a day the agent sends the server's patch state. It only reads: it never ins
 | An OS release that no longer gets security updates | "OS out of support". Ubuntu Pro extended support counts as supported |
 | No patch report for 2 days | "Not reporting" |
 
-Needs Log Central v1.16.0 or newer.
+**🧨 Vulnerabilities page** (alerts)
+
+Once a day the agent reads the WordPress core, plugin and theme versions of every site from their files and sends them. Log Central checks them against Wordfence Intelligence. It needs no wp-cli and no database access, and it changes nothing.
+
+| Problem | Shows up as |
+|---|---|
+| A plugin, theme or WordPress core with a vulnerability that is actively exploited, or critical and published in the last 30 days | "Vulnerable packages", per site, with the installed and the fixed version. Older findings are listed on the page without alerting |
+
+Deactivated plugins are reported too: their files are still on disk and often still reachable. A plugin that is not in the Wordfence feed, like a custom one, shows nothing, which is not the same as safe.
+
+Both pages need Log Central v1.16.0 or newer.
 
 **❌ Not covered**
 
@@ -205,6 +215,8 @@ systemctl status log-central-agent      # is it running?
 journalctl -u log-central-agent -f      # what is it doing?
 /opt/log-central-agent/bin/patch-report --print   # show the patch report without sending it
 systemctl start log-central-agent-patches         # send the patch report now
+/opt/log-central-agent/bin/wp-inventory --print   # show every site's WordPress versions without sending them
+systemctl start log-central-agent-wordpress       # send the WordPress versions now
 curl -fsSL https://github.com/webimpian-os/log-central-agent/releases/latest/download/uninstall.sh | sudo bash
 ```
 

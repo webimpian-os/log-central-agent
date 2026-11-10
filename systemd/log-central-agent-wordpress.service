@@ -1,0 +1,12 @@
+[Unit]
+Description=Send the WordPress core, plugin and theme versions of every site to Log Central
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/log-central-agent/bin/wp-inventory
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=50%
+TimeoutStartSec=30min
