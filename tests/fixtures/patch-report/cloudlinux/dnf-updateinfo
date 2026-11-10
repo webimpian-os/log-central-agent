@@ -1,0 +1,6 @@
+CLSA-2026:1792491149 Moderate/Sec.  alt-libxml2-2.10.2-10.el8.x86_64
+CLSA-2026:1793178724 Important/Sec. alt-libxml2-2.10.2-11.el8.x86_64
+CLSA-2026:1789484345 Critical/Sec.  alt-libxml2-2.10.2-6.el8.x86_64
+CLSA-2026:1793178724 Important/Sec. alt-libxml2-devel-2.10.2-11.el8.x86_64
+CLSA-2026:1793175749 Important/Sec. alt-openssl11-1:1.1.1w-3.10.el8.x86_64
+CLSA-2026:1786473548 Moderate/Sec.  alt-openssl11-1:1.1.1w-3.6.el8.x86_64

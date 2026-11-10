@@ -75,6 +75,19 @@ Rows below the first three are sent once an hour per site and problem, and at mo
 | A single 5xx response now and then | Mostly bots probing paths that don't exist. A timeout or PHP crash behind it is still reported |
 | 5xx responses on the REST batch endpoint, `/wp-json/batch/v1` | Scanners break it on purpose, so they don't make a site look like it's failing. The scanner is still logged under `security` |
 
+**🛡️ Servers page** (alerts)
+
+Once a day the agent sends the server's patch state. It only reads: it never installs an update or reboots.
+
+| Problem | Shows up as |
+|---|---|
+| A security update not installed for more than 3 days | "Security updates overdue", with the packages. On dnf servers only updates rated critical or important count; apt gives no rating, so every security update counts |
+| A reboot pending for more than 14 days | "Reboot overdue", with the running and the installed kernel |
+| An OS release that no longer gets security updates | "OS out of support". Ubuntu Pro extended support counts as supported |
+| No patch report for 2 days | "Not reporting" |
+
+Needs Log Central v1.16.0 or newer.
+
 **❌ Not covered**
 
 | Problem | Instead |
@@ -190,6 +203,8 @@ For scale, the busiest real site on our two test servers peaked at 666 requests 
 ```
 systemctl status log-central-agent      # is it running?
 journalctl -u log-central-agent -f      # what is it doing?
+/opt/log-central-agent/bin/patch-report --print   # show the patch report without sending it
+systemctl start log-central-agent-patches         # send the patch report now
 curl -fsSL https://github.com/webimpian-os/log-central-agent/releases/latest/download/uninstall.sh | sudo bash
 ```
 

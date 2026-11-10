@@ -1,0 +1,10 @@
+[Unit]
+Description=Send this server's patch state to Log Central once a day
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

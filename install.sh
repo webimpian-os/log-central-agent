@@ -14,6 +14,7 @@ SERVICE_USER="$NAME"
 SERVICE="$NAME.service"
 TIMER="$NAME-sites.timer"
 RESTART_TIMER="$NAME-restart.timer"
+PATCHES_TIMER="$NAME-patches.timer"
 DROPIN_DIR="/etc/systemd/system/$SERVICE.d"
 
 say() { printf '==> %s\n' "$*"; }
@@ -204,8 +205,10 @@ id -u "$SERVICE_USER" >/dev/null 2>&1 \
 install -m 0644 "$src/config/pipeline.yaml" "$src/config/runtime.yaml" "$PREFIX/config/"
 install -m 0644 "$src/config/panels/$panel.yaml" "$PREFIX/config/panel.yaml"
 install -m 0755 "$src/bin/refresh-sites" "$PREFIX/bin/refresh-sites"
+install -m 0755 "$src/bin/patch-report" "$PREFIX/bin/patch-report"
 install -m 0644 "$src/systemd/$NAME.service" "$src/systemd/$NAME-sites.service" "$src/systemd/$NAME-sites.timer" \
     "$src/systemd/$NAME-restart.service" "$src/systemd/$NAME-restart.timer" \
+    "$src/systemd/$NAME-patches.service" "$src/systemd/$NAME-patches.timer" \
     /etc/systemd/system/
 if [ -f "$src/systemd/$panel.conf" ]; then
     install -d -m 0755 "$DROPIN_DIR"
@@ -243,7 +246,7 @@ runuser -u "$SERVICE_USER" -- "$PREFIX/bin/vector" validate --no-environment --r
     "$PREFIX/config/pipeline.yaml" "$PREFIX/config/panel.yaml" "$PREFIX/config/runtime.yaml" >/dev/null \
     || fail "Vector rejected the configuration"
 
-units=("$SERVICE" "$RESTART_TIMER")
+units=("$SERVICE" "$RESTART_TIMER" "$PATCHES_TIMER")
 if [ "$panel" = "runcloud" ]; then
     units+=("$TIMER")
 fi
@@ -302,3 +305,6 @@ else
     say "$NAME $AGENT_VERSION is running on $panel_name. No site has logged anything yet"
 fi
 echo "    Follow it with: journalctl -u $SERVICE -f"
+
+say "Sending the first patch report"
+"$PREFIX/bin/patch-report" || echo "    The patch report failed. It is retried daily: journalctl -u $NAME-patches.service"

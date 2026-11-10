@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+secrets_dir="${AGENT_SECRETS_DIR:-/etc/log-central-agent/secrets}"
+panel_file="${AGENT_PANEL_FILE:-/etc/log-central-agent/panel}"
+version_file="${AGENT_VERSION_FILE:-/opt/log-central-agent/VERSION}"
+fixtures="${AGENT_PATCH_FIXTURES:-}"
+
+print_only=0
+[ "${1:-}" != "--print" ] || print_only=1
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# With AGENT_PATCH_FIXTURES set, every probe reads a saved file instead of the live system.
+probe() {
+    local name="$1"
+    shift
+    if [ -n "$fixtures" ]; then
+        if [ -f "$fixtures/$name" ]; then cat "$fixtures/$name"; fi
+    else
+        "$@" 2>/dev/null || true
+    fi
+}
+
+has() {
+    if [ -n "$fixtures" ]; then [ -f "$fixtures/$1" ]; else command -v "$2" >/dev/null 2>&1; fi
+}
+
+json() {
+    if [ -z "$1" ]; then
+        printf 'null'
+        return
+    fi
+    printf '%s' "$1" | tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$/"/'
+}
+
+os_field() {
+    probe os-release cat /etc/os-release | awk -F= -v key="$1" '$1 == key { value = $2; gsub(/^"|"$/, "", value); print value; exit }'
+}
+
+utc() {
+    date -u -d "$1" +%Y-%m-%dT%H:%M:%SZ
+}
+
+booted_at() {
+    local since
+    since="$(uptime -s)" && utc "$since"
+}
+
+apt_checked_at() {
+    [ -f /var/lib/apt/periodic/update-success-stamp ] && utc "@$(stat -c %Y /var/lib/apt/periodic/update-success-stamp)"
+}
+
+newest_boot_kernel() {
+    find /boot -maxdepth 1 -name 'vmlinuz-*' | sed 's|.*/vmlinuz-||' | sort -V | tail -n 1
+}
+
+newest_rpm_kernel() {
+    rpm -q kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort -V | tail -n 1
+}
+
+source_ip() {
+    ip route get 1.1.1.1 | awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }'
+}
+
+pro_attached() {
+    pro status --format json | grep -q '"attached": *true' && echo yes
+}
+
+needs_reboot_apt() {
+    [ -f /var/run/reboot-required ] && echo yes || echo no
+}
+
+reboot_required_since_apt() {
+    [ -f /var/run/reboot-required ] && utc "@$(stat -c %Y /var/run/reboot-required)"
+}
+
+needs_reboot_rpm() {
+    command -v needs-restarting >/dev/null || { echo no; return; }
+    needs-restarting -r >/dev/null && echo no || echo yes
+}
+
+apt_updates() {
+    probe apt-upgradable apt list --upgradable | awk '
+        function esc(text) { gsub(/\\/, "\\\\", text); gsub(/"/, "\\\"", text); return text }
+        index($1, "/") {
+            split($1, source, "/")
+            installed = ""
+            if (match($0, /upgradable from: [^]]+/)) installed = substr($0, RSTART + 17, RLENGTH - 17)
+            printf "%s{\"name\":\"%s\",\"installed\":\"%s\",\"available\":\"%s\",\"security\":%s}", separator, esc(source[1]), esc(installed), esc($2), (source[2] ~ /-security/ ? "true" : "false")
+            separator = ","
+        }
+    '
+}
+
+rpm_updates() {
+    probe rpm-installed rpm -qa --qf '%{NAME}.%{ARCH} %{EPOCHNUM}:%{VERSION}-%{RELEASE}\n' > "$work/installed"
+    probe dnf-updateinfo dnf -q updateinfo list --security > "$work/advisories"
+    probe dnf-check-update dnf -q check-update > "$work/available"
+
+    awk -v installed_file="$work/installed" -v advisories_file="$work/advisories" '
+        function esc(text) { gsub(/\\/, "\\\\", text); gsub(/"/, "\\\"", text); return text }
+        function rank(severity) { return severity == "critical" ? 4 : severity == "important" ? 3 : severity == "moderate" ? 2 : severity == "low" ? 1 : 0 }
+        BEGIN {
+            while ((getline line < installed_file) > 0) {
+                split(line, part, " ")
+                version = part[2]
+                sub(/^0:/, "", version)
+                installed[part[1]] = version
+            }
+            while ((getline line < advisories_file) > 0) {
+                count = split(line, part, " ")
+                if (count < 3 || part[2] !~ /\/Sec\.$/) continue
+                advisories++
+                advisory_id[advisories] = part[1]
+                advisory_severity[advisories] = tolower(substr(part[2], 1, index(part[2], "/") - 1))
+                advisory_package[advisories] = part[3]
+            }
+        }
+        /^Obsoleting Packages/ { exit }
+        { for (i = 1; i <= NF; i++) token[++tokens] = $i }
+        END {
+            for (i = 1; i + 2 <= tokens; i += 3) {
+                dot = match(token[i], /\.[^.]+$/)
+                if (dot == 0) continue
+                name = substr(token[i], 1, dot - 1)
+                arch = substr(token[i], dot + 1)
+                prefix = name "-"
+
+                security = "false"; severity = ""; advisory = ""
+                for (a = 1; a <= advisories; a++) {
+                    package = advisory_package[a]
+                    # The next character must start a version, or "foo" would claim the advisories of "foo-devel".
+                    if (index(package, prefix) != 1 || substr(package, length(prefix) + 1, 1) !~ /[0-9]/) continue
+                    if (substr(package, length(package) - length(arch)) != "." arch) continue
+                    if (security == "false" || rank(advisory_severity[a]) >= rank(severity)) {
+                        severity = rank(advisory_severity[a]) > 0 ? advisory_severity[a] : severity
+                        advisory = advisory_id[a]
+                    }
+                    security = "true"
+                }
+
+                printf "%s{\"name\":\"%s\",\"installed\":%s,\"available\":\"%s\",\"security\":%s,\"severity\":%s,\"advisory\":%s}", separator, esc(name), \
+                    (token[i] in installed ? "\"" esc(installed[token[i]]) "\"" : "null"), esc(token[i + 1]), security, \
+                    (severity == "" ? "null" : "\"" severity "\""), (advisory == "" ? "null" : "\"" esc(advisory) "\"")
+                separator = ","
+            }
+        }
+    ' "$work/available"
+}
+
+os_id="$(os_field ID)"
+os_version="$(os_field VERSION_ID)"
+os_name="$(os_field PRETTY_NAME)"
+kernel_running="$(probe kernel-running uname -r)"
+extended_support="false"
+reboot_required_since=""
+livepatch=""
+panel="$(probe panel cat "$panel_file")"
+panel_version=""
+
+if has apt-upgradable apt; then
+    updates="$(apt_updates)"
+    updates_checked_at="$(probe apt-checked-at apt_checked_at)"
+    kernel_installed="$(probe kernel-installed newest_boot_kernel)"
+    reboot_required="$(probe reboot-required needs_reboot_apt)"
+    reboot_required_since="$(probe reboot-required-since reboot_required_since_apt)"
+    [ "$(probe pro-attached pro_attached)" != "yes" ] || extended_support="true"
+elif has dnf-check-update dnf; then
+    updates="$(rpm_updates)"
+    updates_checked_at="$(probe now date -u +%Y-%m-%dT%H:%M:%SZ)"
+    kernel_installed="$(probe kernel-installed newest_rpm_kernel)"
+    reboot_required="$(probe reboot-required needs_reboot_rpm)"
+else
+    echo "error: no supported package manager (apt or dnf)" >&2
+    exit 1
+fi
+
+if has kernelcare kcarectl; then
+    effective="$(probe kernelcare kcarectl --uname)"
+    [ -z "$effective" ] || livepatch="KernelCare, effective kernel $effective"
+fi
+
+# shellcheck disable=SC2016  # ${Version} is dpkg-query's own placeholder.
+case "$panel" in
+    runcloud) panel_version="$(probe panel-version dpkg-query -W -f='${Version}' runcloud-agent)" ;;
+    plesk) panel_version="$(probe panel-version cut -d ' ' -f 1 /usr/local/psa/version)" ;;
+esac
+
+ip="$(probe ip source_ip)"
+[[ "$ip" =~ ^[0-9A-Fa-f:.]+$ ]] || ip=""
+
+payload="$work/payload.json"
+{
+    printf '{"hostname":%s,"ip":%s,"panel":%s,"panel_version":%s,' \
+        "$(json "$(probe hostname uname -n)")" "$(json "$ip")" "$(json "$panel")" "$(json "$panel_version")"
+    printf '"os":{"id":%s,"name":%s,"version":%s,"extended_support":%s},' \
+        "$(json "$os_id")" "$(json "$os_name")" "$(json "$os_version")" "$extended_support"
+    printf '"kernel":{"running":%s,"installed":%s,"livepatch":%s},' \
+        "$(json "$kernel_running")" "$(json "$kernel_installed")" "$(json "$livepatch")"
+    printf '"reboot_required":%s,"reboot_required_since":%s,"booted_at":%s,"updates_checked_at":%s,' \
+        "$([ "$reboot_required" = "yes" ] && echo true || echo false)" "$(json "$reboot_required_since")" \
+        "$(json "$(probe booted-at booted_at)")" "$(json "$updates_checked_at")"
+    printf '"updates":[%s],"agent_version":%s}\n' "$updates" "$(json "$(probe agent-version cat "$version_file" | sed 's/^v//')")"
+} > "$payload"
+
+if [ "$print_only" -eq 1 ]; then
+    cat "$payload"
+    exit 0
+fi
+
+url="$(cat "$secrets_dir/url")"
+token="$(cat "$secrets_dir/token")"
+
+status="$(printf 'Authorization: Bearer %s\n' "$token" \
+    | curl -sS -m 30 --retry 3 -H @- -H 'Content-Type: application/json' -H 'Accept: application/json' \
+        --data-binary "@$payload" -o "$work/response" -w '%{http_code}' "$url/api/servers")" || { echo "error: cannot reach $url" >&2; exit 1; }
+
+case "$status" in
+    202) echo "patch report accepted by $url" ;;
+    404) echo "error: $url has no /api/servers yet, upgrade Log Central" >&2; exit 1 ;;
+    *) echo "error: $url/api/servers answered HTTP $status: $(head -c 500 "$work/response")" >&2; exit 1 ;;
+esac

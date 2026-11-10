@@ -1,0 +1,12 @@
+[Unit]
+Description=Send this server's pending updates and reboot state to Log Central
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/log-central-agent/bin/patch-report
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=50%
+TimeoutStartSec=15min

@@ -1,0 +1,4 @@
+alt-libxml2.x86_64 0:2.10.2-5.el8
+alt-libxml2-devel.x86_64 0:2.10.2-5.el8
+alt-openssl11.x86_64 1:1.1.1w-3.5.el8
+cl-MariaDB103-server.x86_64 0:10.3.39-6.module_el8.10.0+7250+ddbe8cfb.cloudlinux

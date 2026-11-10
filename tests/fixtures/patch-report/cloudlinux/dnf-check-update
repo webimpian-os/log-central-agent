@@ -1,0 +1,10 @@
+
+alt-libxml2.x86_64            2.10.2-11.el8                                      alt-common                
+alt-libxml2-devel.x86_64      2.10.2-11.el8                                      alt-common                
+alt-openssl11.x86_64          1:1.1.1w-3.10.el8                                  alt-common                
+cl-MariaDB103-server.x86_64   10.3.39-7.module_el8.10.0+7250+ddbe8cfb.cloudlinux cloudlinux-x86_64-server-8
+a-package-with-a-name-long-enough-to-wrap.x86_64
+                              1.0-2.el8                                          cloudlinux-x86_64-server-8
+Obsoleting Packages
+old-thing.x86_64              1.0-1.el8                                          cloudlinux-x86_64-server-8
+    older-thing.x86_64        0.9-1.el8                                          @System

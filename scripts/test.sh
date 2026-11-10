@@ -9,10 +9,11 @@ for panel in config/panels/*.yaml; do
     "$vector" test config/pipeline.yaml "$panel" tests/runtime.yaml tests/*.test.yaml
 done
 tests/refresh_sites.test.sh
+tests/patch_report.test.sh
 VECTOR="$vector" tests/traffic.test.sh
 
 if command -v shellcheck >/dev/null; then
-    shellcheck install.sh uninstall.sh php-log-limit.sh bin/refresh-sites scripts/*.sh tests/*.sh
+    shellcheck install.sh uninstall.sh php-log-limit.sh bin/refresh-sites bin/patch-report scripts/*.sh tests/*.sh
     echo "shellcheck ... passed"
 else
     echo "shellcheck ... skipped (not installed)"
